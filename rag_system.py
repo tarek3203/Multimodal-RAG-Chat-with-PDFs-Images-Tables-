@@ -1,6 +1,9 @@
 import os
 from pinecone import Pinecone
-from langchain_pinecone import PineconeVectorStore
+try:
+    from langchain_pinecone import PineconeVectorStore
+except ImportError:
+    from langchain.vectorstores import Pinecone as PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_groq import ChatGroq
 from langchain.text_splitter import RecursiveCharacterTextSplitter

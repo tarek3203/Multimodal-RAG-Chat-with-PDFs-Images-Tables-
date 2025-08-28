@@ -2,7 +2,8 @@ import PyPDF2
 from pdf2image import convert_from_bytes
 import base64
 from io import BytesIO
-from langchain_openai import OpenAI
+from langchain_openai import ChatOpenAI
+from openai import OpenAI
 from langchain.schema import HumanMessage
 import os
 from typing import List, Dict

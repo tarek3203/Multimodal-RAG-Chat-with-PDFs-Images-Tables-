@@ -16,7 +16,8 @@ A conversational AI chatbot that processes PDF documents and answers questions b
 
 ```bash
 # Clone the repository
-git clone git@github.com:tarek3203/Multimodal-RAG-Chat-with-PDFs-Images-Tables-.git
+git clone <your-repo-url>
+cd rag_chatbot
 
 # Create virtual environment
 python -m venv venv
