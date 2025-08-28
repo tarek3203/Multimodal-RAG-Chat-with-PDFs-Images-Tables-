@@ -1,14 +1,8 @@
 import os
 from pinecone import Pinecone
-try:
-    from langchain_pinecone import PineconeVectorStore
-except ImportError:
-    from langchain.vectorstores import Pinecone as PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_groq import ChatGroq
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferWindowMemory
 from typing import List, Dict
 
 class RAGSystem:
@@ -17,28 +11,22 @@ class RAGSystem:
         self.pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
         self.index_name = os.getenv("PINECONE_INDEX_NAME", "rag-chatbot-index")
         
-        # Initialize Pinecone index for inference (using hosted embeddings)
+        # Initialize Pinecone index
         self.index = self.pc.Index(self.index_name)
         
         # Initialize LLM (using Groq for fast inference)
         self.llm = ChatGroq(
             api_key=os.getenv("GROQ_API_KEY"),
-            model_name="mixtral-8x7b-32768",
+            model_name="llama3-70b-8192",  # Updated to a larger model
             temperature=0.1
         )
         
-        # Initialize memory
-        self.memory = ConversationBufferWindowMemory(
-            k=5,
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Initialize conversation chain - will be set up after adding documents
-        self.qa_chain = None
+        # Simple conversation history (replacing deprecated memory)
+        self.conversation_history = []
+        self.max_history_length = 10  # Keep last 10 exchanges
     
     def add_documents(self, documents: List[Dict]):
-        """Add processed documents to the vector store"""
+        """Add processed documents to the vector store using Pinecone hosted embeddings"""
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
@@ -50,83 +38,175 @@ class RAGSystem:
             chunks = text_splitter.split_text(doc["content"])
             
             # Prepare data for Pinecone with hosted embeddings
-            vectors_to_upsert = []
+            records = []
             for i, chunk in enumerate(chunks):
-                vector_id = f"{doc['filename']}_chunk_{i}"
-                metadata = {
-                    "filename": doc["filename"],
-                    "chunk_id": i,
-                    "total_chunks": len(chunks),
-                    "text": chunk  # This field will be embedded automatically
-                }
-                vectors_to_upsert.append({
-                    "id": vector_id,
-                    "metadata": metadata
-                })
+                if chunk.strip():  # Only process non-empty chunks
+                    record = {
+                        "id": f"{doc['filename']}_chunk_{i}",
+                        "values": chunk,  # For hosted embeddings, pass text as values
+                        "metadata": {
+                            "filename": doc["filename"],
+                            "chunk_id": i,
+                            "total_chunks": len(chunks),
+                            "text": chunk
+                        }
+                    }
+                    records.append(record)
             
-            # Upsert to Pinecone (embeddings will be generated automatically)
-            self.index.upsert(vectors=vectors_to_upsert)
+            # Upsert to Pinecone in batches (hosted embeddings)
+            if records:
+                batch_size = 100  # Process in batches
+                for i in range(0, len(records), batch_size):
+                    batch = records[i:i + batch_size]
+                    try:
+                        self.index.upsert(vectors=batch)
+                        print(f"✅ Uploaded batch {i//batch_size + 1} for {doc['filename']}")
+                    except Exception as e:
+                        print(f"❌ Error uploading batch for {doc['filename']}: {e}")
         
-        print(f"Added {len(documents)} documents to vector store")
-        
-        # Set up QA chain after documents are added
-        self._setup_qa_chain()
+        print(f"✅ Added {len(documents)} documents to vector store")
     
-    def _setup_qa_chain(self):
-        """Set up the QA chain with a simple retriever"""
-        # For now, we'll use a simple approach without langchain retriever
-        # since we're using Pinecone's hosted embeddings
-        pass
+    def _manage_conversation_history(self, user_message: str, ai_response: str):
+        """Manage conversation history with size limits"""
+        self.conversation_history.append({
+            "user": user_message,
+            "assistant": ai_response
+        })
+        
+        # Keep only last max_history_length exchanges
+        if len(self.conversation_history) > self.max_history_length:
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
+    
+    def _format_conversation_context(self) -> str:
+        """Format conversation history for context"""
+        if not self.conversation_history:
+            return ""
+        
+        context_parts = []
+        for exchange in self.conversation_history[-3:]:  # Use last 3 exchanges for context
+            context_parts.append(f"Human: {exchange['user']}")
+            context_parts.append(f"Assistant: {exchange['assistant']}")
+        
+        return "\n".join(context_parts)
     
     def query(self, question: str) -> str:
-        """Query the RAG system"""
+        """Query the RAG system with document context"""
         try:
             # Search for relevant documents using Pinecone's hosted embeddings
             search_results = self.index.query(
-                vector=None,  # Pinecone will embed the query text automatically
+                vector=question,  # For hosted embeddings, pass text directly
                 top_k=4,
                 include_metadata=True,
-                filter=None,
-                query_text=question  # This will be embedded automatically
+                include_values=False
             )
             
             # Extract relevant text chunks
             context_chunks = []
+            source_files = set()
+            
             for match in search_results.matches:
                 if hasattr(match, 'metadata') and 'text' in match.metadata:
                     context_chunks.append(match.metadata['text'])
+                    if 'filename' in match.metadata:
+                        source_files.add(match.metadata['filename'])
             
             # Create context from retrieved chunks
-            context = "\n\n".join(context_chunks)
+            document_context = "\n\n".join(context_chunks)
+            conversation_context = self._format_conversation_context()
             
             # Generate response using LLM
-            prompt = f"""Based on the following context, answer the question. If the answer cannot be found in the context, say so.
+            prompt = f"""You are a helpful AI assistant that answers questions based on provided documents and conversation history.
 
-Context:
-{context}
+CONVERSATION HISTORY:
+{conversation_context}
 
-Question: {question}
+DOCUMENT CONTEXT:
+{document_context}
+
+CURRENT QUESTION: {question}
+
+Instructions:
+- Answer the question based primarily on the document context provided
+- If the answer isn't in the documents, use your general knowledge but mention that it's not from the documents
+- Be conversational and refer to previous parts of our conversation when relevant
+- If you reference specific information, mention which document it's from
+- Keep your response helpful and concise
 
 Answer:"""
             
             response = self.llm.invoke(prompt)
-            return response.content
+            ai_response = response.content
+            
+            # Add source information if available
+            if source_files:
+                ai_response += f"\n\n📄 *Sources: {', '.join(source_files)}*"
+            
+            # Update conversation history
+            self._manage_conversation_history(question, ai_response)
+            
+            return ai_response
             
         except Exception as e:
-            return f"Error processing query: {str(e)}"
+            error_msg = f"❌ Error processing your question: {str(e)}"
+            self._manage_conversation_history(question, error_msg)
+            return error_msg
+    
+    def chat_without_documents(self, message: str) -> str:
+        """Handle normal conversation without documents"""
+        try:
+            conversation_context = self._format_conversation_context()
+            
+            prompt = f"""You are a helpful AI assistant having a natural conversation with a user.
+
+CONVERSATION HISTORY:
+{conversation_context}
+
+CURRENT MESSAGE: {message}
+
+Instructions:
+- Respond naturally and conversationally
+- Refer to previous parts of our conversation when relevant
+- Be helpful, friendly, and informative
+- If the user asks about uploading documents or PDFs, guide them on how to use the document upload feature
+
+Response:"""
+            
+            response = self.llm.invoke(prompt)
+            ai_response = response.content
+            
+            # Update conversation history
+            self._manage_conversation_history(message, ai_response)
+            
+            return ai_response
+            
+        except Exception as e:
+            error_msg = f"❌ Error processing your message: {str(e)}"
+            self._manage_conversation_history(message, error_msg)
+            return error_msg
     
     def clear_memory(self):
-        """Clear conversation memory"""
-        self.memory.clear()
-        
+        """Clear conversation history and optionally documents"""
+        self.conversation_history = []
+        print("🧹 Conversation history cleared")
+    
+    def clear_documents(self):
+        """Clear all documents from the vector store"""
+        try:
+            # Get all vector IDs and delete them
+            # Note: This is a simple approach. For production, you might want more sophisticated document management
+            self.index.delete(delete_all=True)
+            print("🗑️ All documents cleared from vector store")
+        except Exception as e:
+            print(f"❌ Error clearing documents: {e}")
+    
     def get_relevant_docs(self, query: str, k: int = 3):
-        """Get relevant documents for a query"""
+        """Get relevant documents for a query (for debugging/inspection)"""
         try:
             search_results = self.index.query(
-                vector=None,
+                vector=query,  # For hosted embeddings, pass text directly
                 top_k=k,
                 include_metadata=True,
-                query_text=query
+                include_values=False
             )
             
             docs = []
@@ -140,5 +220,12 @@ Answer:"""
             return docs
             
         except Exception as e:
-            print(f"Error retrieving documents: {e}")
+            print(f"❌ Error retrieving documents: {e}")
             return []
+    
+    def get_conversation_summary(self) -> str:
+        """Get a summary of the current conversation"""
+        if not self.conversation_history:
+            return "No conversation yet."
+        
+        return f"Conversation has {len(self.conversation_history)} exchanges. Topics discussed include the recent questions and responses."
