@@ -136,10 +136,14 @@ class PDFProcessor:
         
         # Step 1: Try basic text extraction
         basic_text = self.extract_text_basic(pdf_bytes)
-        
+
+        logger.info(f"[DEBUG 1] Basic Text: {basic_text}")
+
         # Step 2: Assess quality and decide if OCR is needed
         needs_ocr = not self.assess_text_quality(basic_text)
-        
+
+        logger.info(f"[DEBUG 2] Needs OCR: {needs_ocr}")
+
         extracted_content = {
             "filename": filename,
             "text_content": basic_text,

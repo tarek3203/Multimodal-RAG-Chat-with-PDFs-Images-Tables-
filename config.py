@@ -2,6 +2,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 class Config:
     """Configuration settings for the OCR RAG system"""
     
