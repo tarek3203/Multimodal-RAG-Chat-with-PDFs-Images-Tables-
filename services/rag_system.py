@@ -14,17 +14,17 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from config import Config
 
-# Local LLM imports
+# Groq LLM imports
 try:
-    from langchain_ollama import ChatOllama
-    LLAMA_OLLAMA_AVAILABLE = True
+    from langchain_groq import ChatGroq
+    GROQ_AVAILABLE = True
 except ImportError:
-    LLAMA_OLLAMA_AVAILABLE = False
+    GROQ_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 class LocalRAGSystem:
-    """Local RAG system using FAISS and local LLM"""
+    """RAG system using FAISS and Groq LLM"""
     
     def __init__(self, index_name: str = "pdf_documents"):
         Config.ensure_directories()
@@ -39,39 +39,42 @@ class LocalRAGSystem:
             embedding_service=self.embedding_service
         )
         
-        # Initialize local LLM
-        self.llm = self._setup_local_llm()
+        # Initialize Groq LLM
+        self.llm = self._setup_groq_llm()
         
         # Text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=Config.CHUNK_SIZE,
             chunk_overlap=Config.CHUNK_OVERLAP,
-            separators=["\\n\\n", "\\n", " ", ""]
+            separators=["\n\n", "\n", " ", ""]
         )
         
         # Simple conversation history
         self.conversation_history = []
         self.max_history = 6  # Keep last 6 exchanges
     
-    def _setup_local_llm(self) -> Optional[Any]:
-        """Setup local LLM using ChatOllama"""
-        if not LLAMA_OLLAMA_AVAILABLE:
-            logger.warning("langchain-ollama not available. Install with: pip install langchain-ollama")
+    def _setup_groq_llm(self) -> Optional[Any]:
+        """Setup Groq LLM"""
+        if not GROQ_AVAILABLE:
+            logger.warning("langchain-groq not available. Install with: pip install langchain-groq")
+            return None
+        
+        if not Config.GROQ_API_KEY:
+            logger.warning("GROQ_API_KEY not found. Please set your Groq API key.")
             return None
         
         try:
-            # ChatOllama uses model names, not file paths
-            llm = ChatOllama(
-                model="llama2:7b-chat",  # Ollama model name
+            llm = ChatGroq(
+                api_key=Config.GROQ_API_KEY,
+                model=Config.GROQ_MODEL,
                 temperature=0.1
             )
-            logger.info("✅ Local LLM loaded with ChatOllama (llama2:7b-chat)")
+            logger.info(f"Groq LLM loaded: {Config.GROQ_MODEL}")
             return llm
             
         except Exception as e:
-            logger.error(f"Failed to load ChatOllama: {e}")
-            logger.info("Make sure Ollama is running: ollama serve")
-            logger.info("And that you have the model: ollama pull llama2:7b-chat")
+            logger.error(f"Failed to load Groq LLM: {e}")
+            logger.info("Check your Groq API key and internet connection")
             return None
     
     def add_documents(self, documents: List[Dict[str, Any]]):
@@ -103,7 +106,7 @@ class LocalRAGSystem:
         if all_chunks:
             # Add to FAISS vector store
             self.faiss_manager.add_texts(all_chunks, all_metadatas)
-            logger.info(f"✅ Added {len(all_chunks)} chunks to vector store")
+            logger.info(f"Added {len(all_chunks)} chunks to vector store")
         else:
             logger.warning("No valid content found to add to vector store")
     
@@ -119,19 +122,19 @@ class LocalRAGSystem:
                 f"Assistant: {exchange['assistant']}"
             ])
         
-        return "\\n".join(context_parts)
+        return "\n".join(context_parts)
     
     def query_documents(self, question: str) -> str:
         """Query the document collection using RAG"""
         if not self.llm:
-            return "❌ Local LLM not available. Please check your model setup."
+            return "Groq LLM not available. Please check your API key setup."
         
         try:
             # Search for relevant documents
             search_results = self.faiss_manager.similarity_search(question, k=3)
             
             if not search_results:
-                return "❓ I couldn't find relevant information in your documents for this question."
+                return "I couldn't find relevant information in your documents for this question."
             
             # Prepare context
             context_chunks = []
@@ -142,28 +145,28 @@ class LocalRAGSystem:
                 if "filename" in result["metadata"]:
                     source_files.add(result["metadata"]["filename"])
             
-            document_context = "\\n\\n".join(context_chunks)
+            document_context = "\n\n".join(context_chunks)
             conversation_context = self._format_context()
             
             # Generate response
             prompt = f"""You are a helpful AI assistant analyzing documents. Answer the question based on the provided context.
 
-            CONVERSATION HISTORY:
-            {conversation_context}
+CONVERSATION HISTORY:
+{conversation_context}
 
-            DOCUMENT CONTEXT:
-            {document_context}
+DOCUMENT CONTEXT:
+{document_context}
 
-            QUESTION: {question}
+QUESTION: {question}
 
-            Instructions:
-            - Answer based primarily on the document context
-            - Be specific and cite relevant information
-            - If the answer isn't in the documents, say so clearly
-            - Maintain conversation continuity
-            - Be concise but thorough
+Instructions:
+- Answer based primarily on the document context
+- Be specific and cite relevant information
+- If the answer isn't in the documents, say so clearly
+- Maintain conversation continuity
+- Be concise but thorough
 
-            Answer:"""
+Answer:"""
             
             # Use invoke() and get content from response
             response_obj = self.llm.invoke(prompt)
@@ -171,7 +174,7 @@ class LocalRAGSystem:
             
             # Add source information
             if source_files:
-                response += f"\\n\\n📄 *Sources: {', '.join(source_files)}*"
+                response += f"\n\nSources: {', '.join(source_files)}"
             
             # Update conversation history
             self._update_conversation(question, response)
@@ -179,32 +182,32 @@ class LocalRAGSystem:
             return response
             
         except Exception as e:
-            error_msg = f"❌ Error processing question: {str(e)}"
+            error_msg = f"Error processing question: {str(e)}"
             logger.error(error_msg)
             return error_msg
 
     def chat_without_documents(self, message: str) -> str:
         """Handle normal conversation without documents"""
         if not self.llm:
-            return "❌ Local LLM not available. Please check your model setup."
+            return "Groq LLM not available. Please check your API key setup."
         
         try:
             conversation_context = self._format_context()
             
             prompt = f"""You are a helpful AI assistant having a natural conversation.
 
-    CONVERSATION HISTORY:
-    {conversation_context}
+CONVERSATION HISTORY:
+{conversation_context}
 
-    MESSAGE: {message}
+MESSAGE: {message}
 
-    Instructions:
-    - Respond naturally and conversationally
-    - Reference previous conversation when relevant
-    - Be helpful and informative
-    - If asked about documents, explain that no documents are currently loaded
+Instructions:
+- Respond naturally and conversationally
+- Reference previous conversation when relevant
+- Be helpful and informative
+- If asked about documents, explain that no documents are currently loaded
 
-    Response:"""
+Response:"""
             
             # Use invoke() and get content from response
             response_obj = self.llm.invoke(prompt)
@@ -216,7 +219,7 @@ class LocalRAGSystem:
             return response
             
         except Exception as e:
-            error_msg = f"❌ Error processing message: {str(e)}"
+            error_msg = f"Error processing message: {str(e)}"
             logger.error(error_msg)
             return error_msg
     
@@ -234,7 +237,7 @@ class LocalRAGSystem:
     def clear_memory(self):
         """Clear conversation history"""
         self.conversation_history = []
-        logger.info("🧹 Conversation history cleared")
+        logger.info("Conversation history cleared")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get system statistics"""

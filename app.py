@@ -178,25 +178,27 @@ def main():
         st.rerun()
     
     # Footer
-    st.markdown("---")
     st.markdown("""
-    **🔧 System Info:**
-    - 🔍 **OCR**: Local models (TrOCR/EasyOCR/GOT-OCR)
-    - 🧠 **LLM**: Local GGUF models via LlamaCpp
-    - 🗃️ **Vector Store**: FAISS (local storage)
-    - 💾 **Embeddings**: HuggingFace sentence-transformers
+    **System Info:**
+    - OCR: Local models (TrOCR/EasyOCR/GOT-OCR)
+    - LLM: Groq (Llama3-70B-8192)
+    - Vector Store: FAISS (local storage)
+    - Embeddings: HuggingFace sentence-transformers
     """)
-    
-    # Model download instructions
+
+    # Update the warning message:
     if not stats["llm_available"]:
         st.warning("""
-        ⚠️ **Local LLM not found!** 
+        **Groq LLM not available!** 
         
-        Download a GGUF model to the `models/` folder:
-        ```bash
-        # Example: Download Mistral 7B (4-bit, ~4GB)
-        cd models/
-        wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf
+        Get your free API key from Groq:
+        1. Visit: https://console.groq.com/
+        2. Sign up and get your API key
+        3. Set environment variable: export GROQ_API_KEY="your-key-here"
+        
+        Or create a .env file:
+        ```
+        GROQ_API_KEY=your-groq-api-key-here
         ```
         """)
 

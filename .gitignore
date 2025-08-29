@@ -1,3 +1,84 @@
+# Python
+__pycache__/
+services/__pycache__
+vector_services/__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
 venv/
+env/
+ENV/
 .env
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ML/AI specific
 models/
+vector_storage/
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.pkl
+
+# Logs
+*.log
+logs/
+
+# Data files
+data/
+datasets/
+*.csv
+*.json
+*.parquet
+
+# Model caches
+.cache/
+transformers_cache/
+huggingface_cache/
+
+# Large files
+*.gz
+*.zip
+*.tar.gz
+*.tgz
+
+# Environment variables
+.env
+.env.*.local

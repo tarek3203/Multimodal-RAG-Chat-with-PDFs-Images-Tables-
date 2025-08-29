@@ -14,9 +14,11 @@ class Config:
     OCR_METHOD = os.getenv("OCR_METHOD", "trocr")  # trocr, easyocr, got_ocr
     MAX_PDF_PAGES = int(os.getenv("MAX_PDF_PAGES", "15"))
     
-    # Local LLM settings
-    # Ollama settings
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama2:7b-chat")
+    # Groq LLM settings
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama3-70b-8192")
+    
+    # Legacy settings (keeping for reference)
     LLM_MODEL_PATH = os.getenv("LLM_MODEL_PATH", str(MODELS_FOLDER / "mistral-7b-instruct-v0.1.Q4_0.gguf"))
     LLM_CONTEXT_SIZE = int(os.getenv("LLM_CONTEXT_SIZE", "2048"))
     LLM_THREADS = int(os.getenv("LLM_THREADS", "4"))
