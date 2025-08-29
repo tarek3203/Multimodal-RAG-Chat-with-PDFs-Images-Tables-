@@ -1,77 +1,105 @@
+# ===== app.py (Updated) =====
 import streamlit as st
-import os
-from dotenv import load_dotenv
-from pdf_processor import PDFProcessor
-from rag_system import RAGSystem
-from typing import List
+import logging
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+from services.pdf_processor import PDFProcessor
+from services.rag_system import LocalRAGSystem
+from config import Config
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def initialize_session_state():
     """Initialize session state variables"""
     if 'rag_system' not in st.session_state:
-        st.session_state.rag_system = RAGSystem()
+        st.session_state.rag_system = LocalRAGSystem()
+    
     if 'pdf_processor' not in st.session_state:
         st.session_state.pdf_processor = PDFProcessor()
+    
     if 'messages' not in st.session_state:
         st.session_state.messages = []
+    
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = []
 
-def process_uploaded_files(uploaded_files: List) -> bool:
-    """Process uploaded PDF files and return success status"""
+def process_uploaded_files(uploaded_files) -> bool:
+    """Process uploaded PDF files"""
     success_count = 0
     
     for uploaded_file in uploaded_files:
         if uploaded_file.name not in st.session_state.processed_files:
             try:
-                # Process PDF
-                pdf_bytes = uploaded_file.read()
-                processed_doc = st.session_state.pdf_processor.process_pdf(
-                    pdf_bytes, uploaded_file.name
-                )
-                
-                # Add to RAG system
-                st.session_state.rag_system.add_documents([processed_doc])
-                
-                # Track processed files
-                st.session_state.processed_files.append(uploaded_file.name)
-                success_count += 1
-                
+                with st.spinner(f"Processing {uploaded_file.name}..."):
+                    # Read file bytes
+                    pdf_bytes = uploaded_file.read()
+                    
+                    # Process with OCR-enabled PDF processor
+                    processed_doc = st.session_state.pdf_processor.process_pdf(
+                        pdf_bytes, uploaded_file.name
+                    )
+                    
+                    # Add to RAG system
+                    st.session_state.rag_system.add_documents([processed_doc])
+                    
+                    # Track processed files
+                    st.session_state.processed_files.append(uploaded_file.name)
+                    success_count += 1
+                    
+                    # Show processing details
+                    method = processed_doc.get("extraction_method", "unknown")
+                    content_length = processed_doc["metadata"]["content_length"]
+                    st.success(f"✅ {uploaded_file.name} ({method}, {content_length} chars)")
+                    
             except Exception as e:
                 st.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
+                logger.error(f"Error processing {uploaded_file.name}: {e}")
     
     return success_count > 0
 
 def get_ai_response(user_message: str, has_documents: bool) -> str:
-    """Get AI response based on whether documents are available"""
+    """Get AI response based on context"""
     if has_documents:
-        # Use RAG system for document-based queries
-        return st.session_state.rag_system.query(user_message)
+        return st.session_state.rag_system.query_documents(user_message)
     else:
-        # Use direct LLM for normal conversation
         return st.session_state.rag_system.chat_without_documents(user_message)
 
 def main():
     st.set_page_config(
-        page_title="AI Chatbot with RAG",
+        page_title="Local OCR + RAG Chatbot",
         page_icon="🤖",
         layout="wide"
     )
     
-    # Initialize session state
+    # Check if models directory exists
+    if not Config.MODELS_FOLDER.exists():
+        Config.ensure_directories()
+    
     initialize_session_state()
     
     # Header
-    st.title("🤖 AI Chatbot with Document Analysis")
-    st.markdown("*Chat normally or upload PDFs for document-based conversations*")
+    st.title("🤖 Local OCR + RAG Chatbot")
+    st.markdown("*Local AI with document analysis - no external APIs needed for core functionality*")
     
-    # Sidebar with file management
+    # System status
+    stats = st.session_state.rag_system.get_stats()
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("📚 Documents", stats["documents"])
+    with col2:
+        st.metric("💬 Conversations", stats["conversation_length"])
+    with col3:
+        st.metric("🔍 OCR Method", stats["ocr_method"])
+    with col4:
+        st.metric("🧠 LLM", "✅ Local" if stats["llm_available"] else "❌ Missing")
+    
+    # Sidebar
     with st.sidebar:
         st.header("📁 Document Library")
         
-        # Display processed files
         if st.session_state.processed_files:
             st.subheader("📋 Processed Documents")
             for i, filename in enumerate(st.session_state.processed_files, 1):
@@ -79,90 +107,98 @@ def main():
         else:
             st.info("No documents uploaded yet")
         
-        # Clear memory button
-        if st.button("🗑️ Clear Chat & Documents", type="secondary", use_container_width=True):
+        # Configuration
+        st.subheader("⚙️ Configuration")
+        current_ocr = st.selectbox(
+            "OCR Method",
+            ["trocr", "easyocr", "got_ocr"],
+            index=["trocr", "easyocr", "got_ocr"].index(Config.OCR_METHOD)
+        )
+        
+        if st.button("🔄 Restart OCR Processor"):
+            # Reinitialize with new OCR method
+            Config.OCR_METHOD = current_ocr
+            st.session_state.pdf_processor = PDFProcessor()
+            st.success(f"Switched to {current_ocr}")
+        
+        # Clear functions
+        if st.button("🗑️ Clear Chat", use_container_width=True):
             st.session_state.rag_system.clear_memory()
             st.session_state.messages = []
-            st.session_state.processed_files = []
-            st.success("✅ Everything cleared!")
+            st.success("✅ Chat cleared!")
             st.rerun()
         
-        # Instructions
-        st.markdown("---")
-        st.markdown("### 💡 How to use:")
-        st.markdown("1. **Normal chat:** Just type your message")
-        st.markdown("2. **With documents:** Upload PDFs using the attachment button in chat")
-        st.markdown("3. **Ask questions:** Query your uploaded documents")
+        if st.button("🗑️ Clear Documents", use_container_width=True):
+            st.session_state.rag_system.faiss_manager.delete_index()
+            st.session_state.processed_files = []
+            st.success("✅ Documents cleared!")
+            st.rerun()
+    
+    # File upload
+    st.subheader("📤 Upload Documents")
+    uploaded_files = st.file_uploader(
+        "Choose PDF files",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help=f"Upload PDFs for analysis. OCR method: {Config.OCR_METHOD}"
+    )
+    
+    if uploaded_files:
+        if st.button("📥 Process Files", use_container_width=True):
+            if process_uploaded_files(uploaded_files):
+                st.rerun()
     
     # Chat interface
-    st.header("💬 Chat")
+    st.subheader("💬 Chat")
     
-    # Display chat messages
+    # Display messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-            
-            # Show file attachments if any
-            if "files" in message and message["files"]:
-                st.caption(f"📎 Attached: {', '.join(message['files'])}")
-    
-    # File uploader in expandable section above chat input
-    with st.expander("📎 Attach Documents", expanded=False):
-        uploaded_files = st.file_uploader(
-            "Choose PDF files to chat with",
-            type=["pdf"],
-            accept_multiple_files=True,
-            key="chat_file_uploader",
-            help="Upload PDFs to enable document-based conversations"
-        )
-        
-        if uploaded_files:
-            if st.button("📤 Upload & Process Files", use_container_width=True):
-                with st.spinner("Processing documents..."):
-                    if process_uploaded_files(uploaded_files):
-                        st.success(f"✅ Processed {len(uploaded_files)} file(s)")
-                        st.rerun()
     
     # Chat input
-    if prompt := st.chat_input("Type your message here... (Upload documents above for document-based chat)"):
-        # Determine if we have documents
+    if prompt := st.chat_input("Ask a question..."):
         has_documents = len(st.session_state.processed_files) > 0
         
-        # Add user message to chat history
-        user_message = {
-            "role": "user", 
-            "content": prompt,
-            "files": st.session_state.processed_files.copy() if has_documents else []
-        }
-        st.session_state.messages.append(user_message)
+        # Add user message
+        st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
-            if user_message["files"]:
-                st.caption(f"📎 Available documents: {', '.join(user_message['files'])}")
         
-        # Generate and display assistant response
+        # Get AI response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 response = get_ai_response(prompt, has_documents)
                 st.markdown(response)
         
-        # Add assistant response to chat history
+        # Add assistant response
         st.session_state.messages.append({"role": "assistant", "content": response})
         
-        # Auto-scroll to bottom
         st.rerun()
     
-    # Footer info
+    # Footer
     st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.caption("🔍 **Vision:** OpenAI GPT-4V for PDF processing")
-    with col2:
-        st.caption("💬 **Chat:** Groq Mixtral for fast responses")
-    with col3:
-        st.caption("🗄️ **Storage:** Pinecone vector database")
+    st.markdown("""
+    **🔧 System Info:**
+    - 🔍 **OCR**: Local models (TrOCR/EasyOCR/GOT-OCR)
+    - 🧠 **LLM**: Local GGUF models via LlamaCpp
+    - 🗃️ **Vector Store**: FAISS (local storage)
+    - 💾 **Embeddings**: HuggingFace sentence-transformers
+    """)
+    
+    # Model download instructions
+    if not stats["llm_available"]:
+        st.warning("""
+        ⚠️ **Local LLM not found!** 
+        
+        Download a GGUF model to the `models/` folder:
+        ```bash
+        # Example: Download Mistral 7B (4-bit, ~4GB)
+        cd models/
+        wget https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.1-GGUF/resolve/main/mistral-7b-instruct-v0.1.Q4_0.gguf
+        ```
+        """)
 
 if __name__ == "__main__":
     main()

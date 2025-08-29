@@ -1,33 +1,33 @@
-# Core Streamlit and UI
+# ===== requirements.txt (Updated) =====
+
+# Core framework
 streamlit>=1.39.0
-streamlit-chat>=0.1.1
 
-# LangChain ecosystem (latest versions)
+# Local vector processing
 langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-groq>=0.2.0
-langchain-pinecone>=0.2.0
 langchain-community>=0.3.0
+langchain-huggingface>=0.1.0
+faiss-cpu>=1.8.0
 
-# Vector database
-pinecone-client>=5.0.0
-
-# PDF processing
-PyPDF2>=3.0.1
-pdf2image>=1.17.0
+# PDF and image processing
+PyMuPDF>=1.24.0
 Pillow>=10.4.0
 
-# AI models and APIs
-openai>=1.54.0
-groq>=0.12.0
+# OCR models
+transformers>=4.45.0
+torch>=2.1.0
+torchvision>=0.16.0
+easyocr>=1.7.0
+
+# Local LLM support
+langchain-ollama>=0.3.0
 
 # Utilities
 python-dotenv>=1.0.1
-typing-extensions>=4.12.2
+numpy>=1.24.0
 
-# Optional performance improvements
-watchdog>=4.0.2
+# Optional: For better performance
+accelerate>=0.34.0
+sentence-transformers>=3.0.0
 
-# For development/testing
-pytest>=8.0.0
-black>=24.0.0
+
