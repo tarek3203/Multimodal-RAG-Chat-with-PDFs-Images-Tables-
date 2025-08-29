@@ -25,8 +25,9 @@ def initialize_session_state():
     if 'processed_files' not in st.session_state:
         st.session_state.processed_files = []
 
+# Update the process_uploaded_files function to show more details
 def process_uploaded_files(uploaded_files) -> bool:
-    """Process uploaded PDF files"""
+    """Process uploaded PDF files with enhanced extraction"""
     success_count = 0
     
     for uploaded_file in uploaded_files:
@@ -36,22 +37,36 @@ def process_uploaded_files(uploaded_files) -> bool:
                     # Read file bytes
                     pdf_bytes = uploaded_file.read()
                     
-                    # Process with OCR-enabled PDF processor
+                    # Process with enhanced PDF processor
                     processed_doc = st.session_state.pdf_processor.process_pdf(
                         pdf_bytes, uploaded_file.name
                     )
                     
-                    # Add to RAG system
+                    # Add to enhanced RAG system
                     st.session_state.rag_system.add_documents([processed_doc])
                     
                     # Track processed files
                     st.session_state.processed_files.append(uploaded_file.name)
                     success_count += 1
                     
-                    # Show processing details
+                    # Show enhanced processing details
                     method = processed_doc.get("extraction_method", "unknown")
                     content_length = processed_doc["metadata"]["content_length"]
-                    st.success(f"✅ {uploaded_file.name} ({method}, {content_length} chars)")
+                    summary = processed_doc.get("extraction_summary", {})
+                    
+                    details = []
+                    if summary.get("total_tables", 0) > 0:
+                        details.append(f"{summary['total_tables']} tables")
+                    if summary.get("total_images", 0) > 0:
+                        details.append(f"{summary['total_images']} images")
+                    
+                    detail_text = f" ({', '.join(details)})" if details else ""
+                    st.success(f"✅ {uploaded_file.name} ({method}, {content_length} chars{detail_text})")
+                    
+                    # Show extraction methods used
+                    if processed_doc["metadata"].get("extraction_methods_used"):
+                        methods = ", ".join(processed_doc["metadata"]["extraction_methods_used"])
+                        st.info(f"📊 Methods used: {methods}")
                     
             except Exception as e:
                 st.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
@@ -179,28 +194,27 @@ def main():
     
     # Footer
     st.markdown("""
-    **System Info:**
-    - OCR: Local models (TrOCR/EasyOCR/GOT-OCR)
+    **Enhanced System Info:**
+    - OCR: PaddleOCR/EasyOCR (structure-preserving)
+    - Table Extraction: PDFplumber (high precision)
+    - Content: Vector-optimized for embeddings
     - LLM: Groq (Llama3-70B-8192)
     - Vector Store: FAISS (local storage)
     - Embeddings: HuggingFace sentence-transformers
     """)
 
-    # Update the warning message:
-    if not stats["llm_available"]:
-        st.warning("""
-        **Groq LLM not available!** 
-        
-        Get your free API key from Groq:
-        1. Visit: https://console.groq.com/
-        2. Sign up and get your API key
-        3. Set environment variable: export GROQ_API_KEY="your-key-here"
-        
-        Or create a .env file:
-        ```
-        GROQ_API_KEY=your-groq-api-key-here
-        ```
-        """)
+    # Optional: Add a debug section to show processing details
+    if st.sidebar.checkbox("🔍 Show Processing Debug Info"):
+        if st.session_state.processed_files:
+            st.sidebar.subheader("📋 Processing Details")
+            
+            # You can add more detailed stats here
+            stats = st.session_state.rag_system.get_stats()
+            st.sidebar.json({
+                "Documents in Vector Store": stats["documents"],
+                "Vector Store Type": stats["vector_store"],
+                "Conversation Length": stats["conversation_length"]
+            })
 
 if __name__ == "__main__":
     main()

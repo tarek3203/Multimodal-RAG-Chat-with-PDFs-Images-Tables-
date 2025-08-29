@@ -1,7 +1,21 @@
-# ===== requirements.txt (Updated) =====
+# ===== requirements.txt (Updated for Enhanced PDF Processing) =====
 
 # Core framework
 streamlit>=1.39.0
+
+# Enhanced PDF processing libraries
+PyMuPDF>=1.24.0  # Basic text extraction
+pdfplumber>=0.11.0  # Table extraction (best for structured tables)
+pandas>=2.0.0  # Table formatting and manipulation
+
+# Advanced OCR for images
+paddleocr>=2.7.0  # Best for structured image text extraction
+opencv-python>=4.8.0  # Required for PaddleOCR
+easyocr>=1.7.0  # Fallback OCR option
+
+# Alternative table extraction (optional, install if needed)
+# camelot-py[cv]>=0.11.0  # Alternative table extraction
+# tabula-py>=2.9.0  # Java-based table extraction
 
 # Local vector processing
 langchain>=0.3.0
@@ -11,16 +25,15 @@ faiss-cpu>=1.8.0
 
 # Groq LLM support
 langchain-groq>=0.1.0
+groq>=0.9.0
 
-# PDF and image processing
-PyMuPDF>=1.24.0
+# Image processing
 Pillow>=10.4.0
 
-# OCR models
+# Legacy OCR models (existing)
 transformers>=4.45.0
 torch>=2.1.0
 torchvision>=0.16.0
-easyocr>=1.7.0
 
 # Utilities
 python-dotenv>=1.0.1
@@ -29,5 +42,3 @@ numpy>=1.24.0
 # Optional: For better performance
 accelerate>=0.34.0
 sentence-transformers>=3.0.0
-
-python-dotenv
