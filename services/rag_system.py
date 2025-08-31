@@ -15,7 +15,7 @@ from langchain_community.vectorstores import FAISS
 sys.path.append(str(Path(__file__).parent.parent))
 
 from config import Config
-from vector_services.embeddings import MultimodalEmbeddingService
+from vector_services.embeddings import get_embeddings
 from vector_services.faiss_manager import FAISSManager
 from prompts import PromptTemplates
 from config import Config
@@ -31,14 +31,15 @@ class MultimodalRAGSystem:
         self.config = Config
         
         # Initialize embedding service
-        self.embedding_service = MultimodalEmbeddingService(Config.EMBEDDING_MODEL)
+        self.embedding_service = get_embeddings(Config.EMBEDDING_MODEL)
         
         # Initialize FAISS manager
         self.faiss_manager = FAISSManager(
-            persist_directory=str(Config.VECTOR_FOLDER),
-            index_name=index_name,
-            embedding_service=self.embedding_service
+            embedding_model=Config.EMBEDDING_MODEL
         )
+        
+        # Set up retriever from faiss_manager
+        self.retriever = self.faiss_manager.retriever
         
         # Initialize LLM for generation
         self.llm = self._setup_groq_llm()
@@ -129,7 +130,7 @@ class MultimodalRAGSystem:
                 
                 # Add image summaries (following colab pattern exactly)
                 if image_summaries:
-                    img_ids = [str(uuid.uuid4()) for _ in image_summaries]
+                    img_ids = [str(uuid.uuid4()) for _ in images]
                     summary_img = [
                         Document(page_content=summary, metadata={self.faiss_manager.id_key: img_ids[i], "filename": filename, "type": "image"}) for i, summary in enumerate(image_summaries)
                     ]
@@ -141,8 +142,8 @@ class MultimodalRAGSystem:
                     self.retriever.docstore.mset(list(zip(img_ids, images)))
                     logger.info(f"Added {len(image_summaries)} image elements from {filename}")
             
-            # Save the index after adding all documents
-            self.faiss_manager._save_index()
+            # Save the vectorstore after adding all documents (simple approach)
+            # Note: For persistence, you could add vectorstore.save_local() here
             logger.info("Successfully added all documents to RAG system")
             
         except Exception as e:
@@ -160,9 +161,13 @@ class MultimodalRAGSystem:
         if not docs:
             return "I couldn't find relevant information for your question."
         
-        # Format context from retrieved documents
-        context = "\n\n".join([doc.page_content for doc in docs])
+        # Format context from retrieved documents (treating all as strings)
+        context = "\n\n".join([str(doc) for doc in docs])
         
+        logger.debug(f"Retrieved {len(docs)} documents for the question.")
+        
+        logger.debug(f"Retrieved {context} documents for the question.")
+
         # Format conversation history
         history = ""
         if self.conversation_history:
@@ -175,18 +180,28 @@ class MultimodalRAGSystem:
                 ])
             history = "\n".join(history_parts)
         
-            # Simple prompt
+        # Simple prompt (always create it, regardless of history)
+        if history:
             prompt = f"""Answer the question based on the provided context and conversation history.
 
-            Conversation History:
-            {history}
+Conversation History:
+{history}
 
-            Context:
-            {context}
+Context:
+{context}
 
-            Question: {question}
+Question: {question}
 
-            Answer:"""
+Answer:"""
+        else:
+            prompt = f"""Answer the question based on the provided context.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
         
         # Generate response
         try:
@@ -265,7 +280,9 @@ class MultimodalRAGSystem:
     def clear_documents(self):
         """Clear all documents from vector store and doc store"""
         try:
-            self.faiss_manager.delete_index()
+            # Reinitialize the FAISS manager to clear everything
+            self.faiss_manager = FAISSManager(embedding_model=Config.EMBEDDING_MODEL)
+            self.retriever = self.faiss_manager.retriever
             self.doc_store = {}
             logger.info("All documents cleared from RAG system")
         except Exception as e:
@@ -273,15 +290,21 @@ class MultimodalRAGSystem:
     
     def get_stats(self) -> Dict[str, Any]:
         """Get system statistics"""
-        faiss_stats = self.faiss_manager.get_stats()
+        # Simple stats since FAISSManager doesn't have get_stats method
+        vector_store_docs = 0
+        try:
+            if hasattr(self.retriever.vectorstore, 'index') and self.retriever.vectorstore.index:
+                vector_store_docs = self.retriever.vectorstore.index.ntotal
+        except:
+            vector_store_docs = 0
         
         return {
-            "documents_in_vector_store": faiss_stats.get("documents", 0),
+            "documents_in_vector_store": vector_store_docs,
             "documents_in_doc_store": len(self.doc_store),
             "conversation_length": len(self.conversation_history),
             "llm_available": self.llm is not None,
             "vector_store_type": "FAISS",
-            "embedding_model": self.embedding_service.model_name,
+            "embedding_model": getattr(self.embedding_service, 'model_name', Config.EMBEDDING_MODEL),
             "content_types": self._get_content_type_stats()
         }
     

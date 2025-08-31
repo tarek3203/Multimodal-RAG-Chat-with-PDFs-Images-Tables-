@@ -10,9 +10,9 @@ from langchain.schema.document import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 
-class SimpleFAISSManager:
-    """Simple FAISS manager that follows the colab notebook pattern exactly"""
-    
+class FAISSManager:
+    """FAISS manager for handling vector storage and retrieval"""
+
     def __init__(self, embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
         # Initialize HuggingFace embeddings (like OpenAIEmbeddings in colab)
         self.embeddings = HuggingFaceEmbeddings(
@@ -21,10 +21,10 @@ class SimpleFAISSManager:
             encode_kwargs={'normalize_embeddings': True}
         )
         
-        # Initialize vectorstore with a dummy document (like Chroma in colab)
+        # Initialize vectorstore with a dummy document to start
         self.vectorstore = FAISS.from_texts(["init"], embedding=self.embeddings)
         
-        # The storage layer for the parent documents (original content)
+        # The storage layer for the parent documents 
         self.docstore = InMemoryStore()
         
         # Document ID key
