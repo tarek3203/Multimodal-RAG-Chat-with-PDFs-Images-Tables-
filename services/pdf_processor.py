@@ -1,541 +1,353 @@
-# ===== services/enhanced_pdf_processor.py =====
-# Enhanced PDF processor with systematic extraction: text → tables → images
-import fitz  # PyMuPDF
-import pdfplumber
-import io
-from PIL import Image
-import pandas as pd
-from typing import Dict, List, Any, Optional
+# ===== services/pdf_processor.py =====
+"""
+Multimodal PDF processor using unstructured library for comprehensive extraction
+"""
 import logging
-import cv2
-import numpy as np
-
+from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
+import tempfile
+import base64
 from config import Config
+from prompts import PromptTemplates
 
 logger = logging.getLogger(__name__)
 
-class PDFProcessor:
-    """Enhanced PDF processor with systematic text, table, and image extraction"""
+class MultimodalPDFProcessor:
+    """PDF processor with multimodal capabilities using unstructured library"""
     
-    def __init__(self, ocr_method: str = None):
-        self.ocr_method = ocr_method or Config.OCR_METHOD
+    def __init__(self):
         self.max_pages = Config.MAX_PDF_PAGES
+        self.temp_dir = None
         
-        # Initialize OCR processor for images
-        self._init_image_ocr()
+        # Initialize summarization chains
+        self._init_summarization_chains()
         
-        logger.info(f"Enhanced PDF processor initialized with OCR: {self.ocr_method}")
+        logger.info("Multimodal PDF processor initialized")
     
-    def _init_image_ocr(self):
-        """Initialize the best OCR method for image text extraction"""
+    def _init_summarization_chains(self):
+        """Initialize the summarization chains for different content types"""
         try:
-            # Try PaddleOCR first (best for structured text)
-            import paddleocr
-            self.image_ocr = paddleocr.PaddleOCR(
-                use_angle_cls=True, 
-                lang='en',
-                # show_log=False,
-                # use_gpu=False  # CPU for M1 compatibility
-            )
-            self.ocr_method = "paddleocr"
-            logger.info("Using PaddleOCR for image text extraction")
+            from langchain_groq import ChatGroq
+            from langchain_core.output_parsers import StrOutputParser
             
-        except ImportError:
-            # Fallback to EasyOCR
-            try:
-                import easyocr
-                self.image_ocr = easyocr.Reader(['en'], gpu=False)
-                self.ocr_method = "easyocr"
-                logger.info("Using EasyOCR for image text extraction")
+            if Config.GROQ_API_KEY:
+                # Initialize Groq model
+                self.text_model = ChatGroq(
+                    api_key=Config.GROQ_API_KEY,
+                    model=Config.GROQ_MODEL,
+                    temperature=0.3
+                )
                 
-            except ImportError:
-                logger.warning("No OCR library available for images. Install paddleocr or easyocr")
-                self.image_ocr = None
-    
-    def extract_text_from_page(self, page) -> str:
-        """Extract basic text from a single page"""
-        try:
-            text = page.get_text()
-            return text.strip() if text else ""
-        except Exception as e:
-            logger.error(f"Text extraction failed: {e}")
-            return ""
-    
-    def detect_and_extract_tables(self, pdf_bytes: bytes, page_num: int) -> List[Dict]:
-        """Detect and extract tables from a specific page with structural formatting"""
-        tables_data = []
-        
-        try:
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                if page_num < len(pdf.pages):
-                    page = pdf.pages[page_num]
-                    
-                    # Extract tables from the page
-                    tables = page.extract_tables()
-                    
-                    for table_idx, table in enumerate(tables):
-                        if table and len(table) > 1:  # Must have headers and data
-                            # Convert to structured format
-                            structured_table = self._format_table_structurally(
-                                table, page_num + 1, table_idx + 1
-                            )
-                            tables_data.append(structured_table)
-                            
-        except Exception as e:
-            logger.error(f"Table extraction failed for page {page_num + 1}: {e}")
-        
-        return tables_data
-    
-    def _format_table_structurally(self, table: List[List], page_num: int, table_num: int) -> Dict:
-        """Format table data in a structured, readable format"""
-        if not table:
-            return {}
-        
-        # Clean and prepare table data
-        cleaned_table = []
-        for row in table:
-            cleaned_row = []
-            for cell in row:
-                # Clean cell content
-                cell_content = str(cell).strip() if cell is not None else ""
-                cleaned_row.append(cell_content)
-            cleaned_table.append(cleaned_row)
-        
-        # Convert to pandas DataFrame for better handling
-        try:
-            df = pd.DataFrame(cleaned_table[1:], columns=cleaned_table[0])
+                # Text summarization chain
+                text_prompt = PromptTemplates.get_text_summary_prompt()
+                self.text_summarize_chain = {"element": lambda x: x} | text_prompt | self.text_model | StrOutputParser()
+                
+                # Table summarization chain  
+                table_prompt = PromptTemplates.get_table_summary_prompt()
+                self.table_summarize_chain = {"element": lambda x: x} | table_prompt | self.text_model | StrOutputParser()
+                
+                logger.info("Text and Table summarization chains initialized with Groq")
+            else:
+                self.text_model = None
+                self.text_summarize_chain = None
+                self.table_summarize_chain = None
+                logger.warning("Groq API key not found - text/table summarization disabled")
             
-            # Create markdown-style table
-            markdown_table = self._create_markdown_table(df)
+            # Image analysis chain (separate from text/table)
+            self.image_model = None
+            self.image_analyze_chain = None
             
-            # Also create structured dictionary
-            structured_data = {
-                "headers": cleaned_table[0],
-                "rows": cleaned_table[1:],
-                "row_count": len(cleaned_table) - 1,
-                "col_count": len(cleaned_table[0]) if cleaned_table else 0
-            }
-            
-            return {
-                "page": page_num,
-                "table_number": table_num,
-                "markdown_format": markdown_table,
-                "structured_data": structured_data,
-                "source_type": "table_extraction"
-            }
-            
-        except Exception as e:
-            logger.error(f"Table formatting failed: {e}")
-            return {
-                "page": page_num,
-                "table_number": table_num,
-                "raw_data": cleaned_table,
-                "source_type": "table_extraction"
-            }
-    
-    def _create_markdown_table(self, df: pd.DataFrame) -> str:
-        """Create a well-formatted markdown table"""
-        if df.empty:
-            return ""
-        
-        # Create header row
-        headers = "| " + " | ".join(str(col) for col in df.columns) + " |"
-        separator = "|" + "|".join("---" for _ in df.columns) + "|"
-        
-        # Create data rows
-        rows = []
-        for _, row in df.iterrows():
-            row_str = "| " + " | ".join(str(cell) for cell in row) + " |"
-            rows.append(row_str)
-        
-        return "\n".join([headers, separator] + rows)
-    
-    def extract_images_with_text(self, pdf_bytes: bytes, page_num: int) -> List[Dict]:
-        """Extract images and their text content with structure preservation"""
-        images_with_text = []
-        
-        try:
-            doc = fitz.open("pdf", pdf_bytes)
-            page = doc.load_page(page_num)
-            image_list = page.get_images(full=True)
-            
-            for img_index, img in enumerate(image_list):
+            # Try Google Gemini first for image analysis
+            if Config.GOOGLE_API_KEY:
                 try:
-                    # Extract image
-                    xref = img[0]
-                    pix = fitz.Pixmap(doc, xref)
+                    from langchain_google_genai import ChatGoogleGenerativeAI
                     
-                    # Convert to PIL Image
-                    if pix.n - pix.alpha < 4:  # GRAY or RGB
-                        img_data = pix.tobytes("png")
-                        image = Image.open(io.BytesIO(img_data))
-                        
-                        # Extract text from image with structure
-                        extracted_text = self._extract_structured_text_from_image(image)
-                        
-                        if extracted_text:
-                            images_with_text.append({
-                                "page": page_num + 1,
-                                "image_index": img_index + 1,
-                                "extracted_text": extracted_text,
-                                "image_size": image.size,
-                                "source_type": "image_ocr"
-                            })
+                    self.image_model = ChatGoogleGenerativeAI(
+                        model="gemini-1.5-flash",
+                        api_key=Config.GOOGLE_API_KEY,
+                        temperature=0.3,
+                        max_output_tokens=300
+                    )
                     
-                    pix = None  # Free memory
+                    # Use prompt from prompts file - clean and structured
+                    image_prompt = PromptTemplates.get_image_analysis_prompt()
+                    self.image_analyze_chain = image_prompt | self.image_model | StrOutputParser()
+                    logger.info("Image analysis chain initialized with Gemini")
                     
-                except Exception as e:
-                    logger.warning(f"Image processing failed for image {img_index} on page {page_num + 1}: {e}")
+                except ImportError:
+                    logger.warning("langchain-google-genai not available")
             
-            doc.close()
+            # Fallback to OpenAI if Gemini not available
+            if not self.image_model and Config.OPENAI_API_KEY:
+                try:
+                    from langchain_openai import ChatOpenAI
+                    
+                    self.image_model = ChatOpenAI(
+                        model="gpt-4o",
+                        api_key=Config.OPENAI_API_KEY,
+                        temperature=0.3,
+                        max_tokens=300
+                    )
+                    
+                    # Use the same prompt from prompts file for consistency
+                    image_prompt = PromptTemplates.get_image_analysis_prompt()
+                    self.image_analyze_chain = image_prompt | self.image_model | StrOutputParser()
+                    logger.info("Image analysis chain initialized with OpenAI")
+                    
+                except ImportError:
+                    logger.warning("langchain-openai not available")
             
+            if not self.image_model:
+                logger.warning("No vision model available - image analysis disabled")
+                
         except Exception as e:
-            logger.error(f"Image extraction failed for page {page_num + 1}: {e}")
-        
-        return images_with_text
+            logger.error(f"Error initializing summarization chains: {e}")
+            self.text_summarize_chain = None
+            self.table_summarize_chain = None
+            self.image_analyze_chain = None
     
-    def _extract_structured_text_from_image(self, image: Image.Image) -> str:
-        """Extract text from image while preserving structure"""
-        if not self.image_ocr:
-            return ""
-        
+    def _partition_pdf(self, pdf_path: str) -> List[Any]:
+        """Partition PDF using unstructured library"""
         try:
-            # Convert PIL to numpy for OCR processing
-            img_array = np.array(image)
+            from unstructured.partition.pdf import partition_pdf
             
-            if self.ocr_method == "paddleocr":
-                # PaddleOCR preserves text positioning
-                result = self.image_ocr.ocr(img_array, cls=True)
-                
-                if result and result[0]:
-                    # Sort by vertical position to maintain reading order
-                    sorted_results = sorted(result[0], key=lambda x: (x[0][0][1], x[0][0][0]))
-                    
-                    text_blocks = []
-                    current_line = []
-                    current_y = None
-                    line_threshold = 10  # pixels
-                    
-                    for detection in sorted_results:
-                        bbox, (text, confidence) = detection
-                        y_pos = bbox[0][1]  # Top-left y coordinate
-                        
-                        if confidence > 0.7:  # Only high-confidence text
-                            if current_y is None or abs(y_pos - current_y) < line_threshold:
-                                # Same line
-                                current_line.append(text)
-                                current_y = y_pos
-                            else:
-                                # New line
-                                if current_line:
-                                    text_blocks.append(" ".join(current_line))
-                                current_line = [text]
-                                current_y = y_pos
-                    
-                    # Add the last line
-                    if current_line:
-                        text_blocks.append(" ".join(current_line))
-                    
-                    return "\n".join(text_blocks)
+            # Create temporary directory for image extraction
+            self.temp_dir = tempfile.mkdtemp()
             
-            elif self.ocr_method == "easyocr":
-                # EasyOCR processing
-                results = self.image_ocr.readtext(img_array)
-                
-                # Sort by position to maintain structure
-                sorted_results = sorted(results, key=lambda x: (x[0][0][1], x[0][0][0]))
-                
-                text_parts = []
-                for bbox, text, confidence in sorted_results:
-                    if confidence > 0.7:  # Only high-confidence text
-                        text_parts.append(text.strip())
-                
-                return "\n".join(text_parts)
+            logger.info(f"Partitioning PDF: {pdf_path}")
             
-        except Exception as e:
-            logger.error(f"OCR text extraction failed: {e}")
-        
-        return ""
-    
-    def process_single_page(self, pdf_bytes: bytes, page_num: int) -> Dict[str, Any]:
-        """Process a single page systematically: text → tables → images"""
-        page_content = {
-            "page_number": page_num + 1,
-            "text_content": "",
-            "tables": [],
-            "images_text": [],
-            "extraction_methods": []
-        }
-        
-        try:
-            # Open page with PyMuPDF for basic text extraction
-            doc = fitz.open("pdf", pdf_bytes)
-            page = doc.load_page(page_num)
-            
-            # Step 1: Extract basic text
-            text_content = self.extract_text_from_page(page)
-            
-            if text_content and len(text_content.strip()) > 50:
-                page_content["text_content"] = text_content
-                page_content["extraction_methods"].append("basic_text")
-            
-            doc.close()
-            
-            # Step 2: Detect and extract tables
-            tables = self.detect_and_extract_tables(pdf_bytes, page_num)
-            if tables:
-                page_content["tables"] = tables
-                page_content["extraction_methods"].append("table_extraction")
-            
-            # Step 3: Extract images with text if no good text/tables found
-            # or if page seems to have embedded images
-            should_extract_images = (
-                len(page_content["text_content"]) < 100 or
-                not page_content["tables"] or
-                self._page_has_significant_images(pdf_bytes, page_num)
+            chunks = partition_pdf(
+                filename=pdf_path,
+                infer_table_structure=True,            # Extract tables
+                strategy="hi_res",                     # High resolution for better quality
+                extract_image_block_types=["Image"],   # Extract images
+                extract_image_block_to_payload=True,   # Get base64 encoded images
+                chunking_strategy="by_title",          # Chunk by document structure
+                max_characters=10000,                  # Max characters per chunk
+                combine_text_under_n_chars=2000,       # Combine small chunks
+                new_after_n_chars=6000,               # New chunk after this many chars
             )
             
-            if should_extract_images:
-                images_text = self.extract_images_with_text(pdf_bytes, page_num)
-                if images_text:
-                    page_content["images_text"] = images_text
-                    page_content["extraction_methods"].append("image_ocr")
-        
+            logger.info(f"Successfully partitioned PDF into {len(chunks)} chunks")
+            return chunks
+            
         except Exception as e:
-            logger.error(f"Page processing failed for page {page_num + 1}: {e}")
-        
-        return page_content
+            logger.error(f"Error partitioning PDF: {e}")
+            return []
     
-    def _page_has_significant_images(self, pdf_bytes: bytes, page_num: int) -> bool:
-        """Check if page has significant images worth processing"""
-        try:
-            doc = fitz.open("pdf", pdf_bytes)
-            page = doc.load_page(page_num)
-            image_list = page.get_images(full=True)
-            doc.close()
-            
-            # Consider significant if more than 2 images or large images
-            return len(image_list) > 2
-            
-        except:
-            return False
+    def get_tables(self, chunks):
+        """Extract all Table elements from chunks and from within CompositeElement chunks"""
+        tables = []
+
+        # First, look for direct Table type chunks
+        for chunk in chunks:
+            if "Table" in str(type(chunk)):
+                tables.append(chunk)
+
+        # Then, look for tables within CompositeElement chunks
+        for chunk in chunks:
+            if "CompositeElement" in str(type(chunk)):
+                if hasattr(chunk, 'metadata') and hasattr(chunk.metadata, 'orig_elements'):
+                    chunk_els = chunk.metadata.orig_elements
+                    for el in chunk_els:
+                        if "Table" in str(type(el)):
+                            tables.append(el)
+
+        logger.info(f"Extracted {len(tables)} table elements")
+        return tables
+
+    def get_texts(self, chunks):
+        """Extract all text-based elements from chunks (excluding tables and images)"""
+        texts = []
+        excluded_types = ["Table", "Image"]
+
+        # First, look for direct text-based chunks (excluding tables, images, and CompositeElement)
+        for chunk in chunks:
+            chunk_type = str(type(chunk))
+            if not any(excluded_type in chunk_type for excluded_type in excluded_types) and "CompositeElement" not in chunk_type:
+                texts.append(chunk)
+
+        # Then, look for text elements within CompositeElement chunks (excluding tables and images)
+        for chunk in chunks:
+            if "CompositeElement" in str(type(chunk)):
+                if hasattr(chunk, 'metadata') and hasattr(chunk.metadata, 'orig_elements'):
+                    chunk_els = chunk.metadata.orig_elements
+                    for el in chunk_els:
+                        el_type = str(type(el))
+                        if not any(excluded_type in el_type for excluded_type in excluded_types):
+                            texts.append(el)
+
+        logger.info(f"Extracted {len(texts)} text elements")
+        return texts
+
+    def get_images(self, chunks):
+        """Extract all Image elements and images within other chunks"""
+        images_b64 = []
+
+        # First, look for direct Image type chunks
+        for chunk in chunks:
+            if "Image" in str(type(chunk)):
+                if hasattr(chunk.metadata, 'image_base64'):
+                    images_b64.append(chunk.metadata.image_base64)
+
+        # Then, look for images within other chunk types (like CompositeElement)
+        for chunk in chunks:
+            if hasattr(chunk, 'metadata') and hasattr(chunk.metadata, 'orig_elements'):
+                chunk_els = chunk.metadata.orig_elements
+                for el in chunk_els:
+                    if "Image" in str(type(el)):
+                        if hasattr(el.metadata, 'image_base64'):
+                            images_b64.append(el.metadata.image_base64)
+
+        logger.info(f"Extracted {len(images_b64)} image elements")
+        return images_b64
     
-    def convert_table_to_natural_language(self, table: Dict) -> str:
-        """Convert structured table data to natural language for better vector search"""
-        if 'structured_data' not in table:
-            return ""
-        
-        headers = table['structured_data']['headers']
-        rows = table['structured_data']['rows']
-        
-        if not headers or not rows:
-            return ""
-        
-        # Create natural language descriptions
-        natural_text = []
-        natural_text.append(f"Table {table['table_number']} from page {table['page']}:")
-        
-        for row in rows:
-            if not any(cell for cell in row if cell and str(cell).strip()):
-                continue  # Skip empty rows
-                
-            row_items = []
-            for i, cell in enumerate(row):
-                if i < len(headers) and cell and str(cell).strip():
-                    header = str(headers[i]).strip()
-                    value = str(cell).strip()
-                    if header and value:
-                        row_items.append(f"{header} is {value}")
-            
-            if row_items:
-                natural_text.append(", ".join(row_items))
-        
-        return "\n".join(natural_text)
     
-    def prepare_content_for_vectorization(self, page_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare content optimized for vector search while preserving display formats"""
-        page_num = page_data["page_number"]
+    def _summarize_elements(self, texts: List[Any], tables: List[Any], images: List[str]) -> Tuple[List[str], List[str], List[str]]:
+        """Generate summaries for all extracted elements"""
+        text_summaries = []
+        table_summaries = []
+        image_summaries = []
         
-        # Content optimized for vector search (clean, natural language)
-        vector_content_parts = []
+        # Summarize texts
+        if texts and self.text_summarize_chain:
+            try:
+                logger.info(f"Summarizing {len(texts)} text elements")
+                text_content = [str(text) for text in texts]
+                text_summaries = self.text_summarize_chain.batch(text_content, {"max_concurrency": 3})
+                logger.info(f"Generated {len(text_summaries)} text summaries")
+            except Exception as e:
+                logger.error(f"Error summarizing texts: {e}")
+                # Fallback to original content
+                text_summaries = [str(text) for text in texts]
+        else:
+            text_summaries = [str(text) for text in texts]
         
-        # Content with formatting preserved for display
-        display_content_parts = []
-        display_content_parts.append(f"=== PAGE {page_num} ===")
-        
-        # Metadata for tracking source types
-        content_metadata = []
-        
-        # Process basic text
-        if page_data["text_content"]:
-            clean_text = page_data["text_content"].strip()
-            vector_content_parts.append(clean_text)
-            
-            display_content_parts.append("--- TEXT CONTENT ---")
-            display_content_parts.append(clean_text)
-            
-            content_metadata.append({
-                "type": "text",
-                "page": page_num,
-                "source": "basic_extraction"
-            })
-        
-        # Process tables - convert to natural language for vectors
-        if page_data["tables"]:
-            for table in page_data["tables"]:
-                # Natural language for vector search
-                natural_table_text = self.convert_table_to_natural_language(table)
-                if natural_table_text:
-                    vector_content_parts.append(natural_table_text)
+        # Summarize tables
+        if tables and self.text_summarize_chain:
+            try:
+                logger.info(f"Summarizing {len(tables)} table elements")
+                # Extract HTML representation of tables
+                table_content = []
+                for table in tables:
+                    if hasattr(table.metadata, 'text_as_html'):
+                        table_content.append(table.metadata.text_as_html)
+                    else:
+                        table_content.append(str(table))
                 
-                # Formatted version for display
-                display_content_parts.append(f"--- TABLE {table['table_number']} (Page {table['page']}) ---")
-                if "markdown_format" in table:
-                    display_content_parts.append(table["markdown_format"])
-                else:
-                    display_content_parts.append(str(table.get("raw_data", "")))
-                
-                content_metadata.append({
-                    "type": "table",
-                    "page": page_num,
-                    "table_number": table['table_number'],
-                    "source": "table_extraction",
-                    "formatted_version": table.get("markdown_format", ""),
-                    "structured_data": table.get("structured_data", {})
-                })
+                table_summaries = self.text_summarize_chain.batch(table_content, {"max_concurrency": 3})
+                logger.info(f"Generated {len(table_summaries)} table summaries")
+            except Exception as e:
+                logger.error(f"Error summarizing tables: {e}")
+                # Fallback to original content
+                table_summaries = [str(table) for table in tables]
+        else:
+            table_summaries = [str(table) for table in tables]
         
-        # Process image text
-        if page_data["images_text"]:
-            for img_text in page_data["images_text"]:
-                clean_image_text = img_text["extracted_text"].strip()
-                if clean_image_text:
-                    vector_content_parts.append(clean_image_text)
-                
-                display_content_parts.append(f"--- IMAGE TEXT {img_text['image_index']} (Page {img_text['page']}) ---")
-                display_content_parts.append(clean_image_text)
-                
-                content_metadata.append({
-                    "type": "image_text",
-                    "page": page_num,
-                    "image_index": img_text['image_index'],
-                    "source": "image_ocr"
-                })
+        # Analyze images
+        if images and self.image_analyze_chain:
+            try:
+                logger.info(f"Analyzing {len(images)} image elements")
+                # Process images in batches to avoid rate limits
+                image_summaries = self.image_analyze_chain.batch(images, {"max_concurrency": 2})
+                logger.info(f"Generated {len(image_summaries)} image descriptions")
+            except Exception as e:
+                logger.error(f"Error analyzing images: {e}")
+                # Fallback to placeholder descriptions
+                image_summaries = [f"Image {i+1} from PDF document" for i in range(len(images))]
+        else:
+            image_summaries = [f"Image {i+1} from PDF document" for i in range(len(images))]
         
-        return {
-            "vector_content": "\n\n".join(vector_content_parts),  # Clean for embeddings
-            "display_content": "\n".join(display_content_parts),   # Formatted for display
-            "content_metadata": content_metadata,
-            "page_number": page_num
-        }
-    
-    def combine_page_content(self, page_data: Dict[str, Any]) -> str:
-        """Legacy method - now calls the optimized version"""
-        optimized_content = self.prepare_content_for_vectorization(page_data)
-        return optimized_content["display_content"]
+        return text_summaries, table_summaries, image_summaries
     
     def process_pdf(self, pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
-        """Main processing function with vector-optimized content preparation"""
-        logger.info(f"Processing PDF with enhanced processor: {filename}")
-        
-        all_page_content = []
-        optimized_pages = []  # For vector storage
-        extraction_summary = {
-            "pages_with_text": 0,
-            "pages_with_tables": 0,
-            "pages_with_images": 0,
-            "total_tables": 0,
-            "total_images": 0
-        }
+        """Main PDF processing function"""
+        logger.info(f"Processing multimodal PDF: {filename}")
         
         try:
-            # Determine number of pages
-            doc = fitz.open("pdf", pdf_bytes)
-            total_pages = min(doc.page_count, self.max_pages)
-            doc.close()
+            # Save bytes to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                temp_file.write(pdf_bytes)
+                temp_pdf_path = temp_file.name
             
-            # Process each page
-            for page_num in range(total_pages):
-                logger.info(f"Processing page {page_num + 1}/{total_pages}")
-                
-                page_content = self.process_single_page(pdf_bytes, page_num)
-                all_page_content.append(page_content)
-                
-                # Prepare optimized content for vectorization
-                optimized_page = self.prepare_content_for_vectorization(page_content)
-                optimized_pages.append(optimized_page)
-                
-                # Update summary
-                if page_content["text_content"]:
-                    extraction_summary["pages_with_text"] += 1
-                if page_content["tables"]:
-                    extraction_summary["pages_with_tables"] += 1
-                    extraction_summary["total_tables"] += len(page_content["tables"])
-                if page_content["images_text"]:
-                    extraction_summary["pages_with_images"] += 1
-                    extraction_summary["total_images"] += len(page_content["images_text"])
+            # Partition PDF
+            chunks = self._partition_pdf(temp_pdf_path)
             
-            # Combine content for vector storage (clean natural language)
-            vector_content_parts = []
-            display_content_parts = []
+            if not chunks:
+                logger.warning(f"No content extracted from {filename}")
+                return {
+                    "filename": filename,
+                    "content": "No content could be extracted from this PDF",
+                    "texts": [],
+                    "tables": [],
+                    "images": [],
+                    "text_summaries": [],
+                    "table_summaries": [],
+                    "image_summaries": [],
+                    "metadata": {"extraction_method": "multimodal_failed"}
+                }
             
-            for optimized_page in optimized_pages:
-                if optimized_page["vector_content"].strip():
-                    vector_content_parts.append(optimized_page["vector_content"])
-                display_content_parts.append(optimized_page["display_content"])
+            # texts extractions
+            texts = self.get_texts(chunks)
             
-            vector_optimized_content = "\n\n".join(vector_content_parts)
-            display_formatted_content = "\n\n".join(display_content_parts)
+            # table extractions
+            tables = self.get_tables(chunks)
+
+            # image extractions
+            images = self.get_images(chunks)
+
+            # Generate summaries
+            text_summaries, table_summaries, image_summaries = self._summarize_elements(texts, tables, images)
             
-            # Determine primary extraction method
-            primary_method = "mixed"
-            if extraction_summary["total_tables"] > 0:
-                primary_method = "table_focused"
-            elif extraction_summary["pages_with_images"] > extraction_summary["pages_with_text"]:
-                primary_method = "image_focused"
-            elif extraction_summary["pages_with_text"] > 0:
-                primary_method = "text_focused"
             
-            logger.info(f"Successfully processed {filename}: {len(vector_optimized_content)} chars for vectors, "
-                       f"{extraction_summary['total_tables']} tables, {extraction_summary['total_images']} images")
+            # Cleanup temporary files
+            try:
+                Path(temp_pdf_path).unlink()
+                if self.temp_dir:
+                    import shutil
+                    shutil.rmtree(self.temp_dir, ignore_errors=True)
+            except Exception as e:
+                logger.warning(f"Error cleaning up temporary files: {e}")
             
-            # 🔍 DEBUG: Print the entire extracted content to terminal
-            print(f"\n{'='*80}")
-            print(f"📄 EXTRACTED CONTENT FROM: {filename}")
-            print(f"📊 Length: {len(vector_optimized_content)} characters")
-            print(f"{'='*80}")
-            print(vector_optimized_content)
-            print(f"{'='*80}\n")
-            
-            return {
+            result = {
                 "filename": filename,
-                # Main content optimized for vector search (natural language)
-                "total_content": vector_optimized_content,
-                # Formatted content for display purposes
-                "display_content": display_formatted_content,
-                # Detailed page-by-page optimized data
-                "optimized_pages": optimized_pages,
-                "extraction_method": primary_method,
-                "extraction_summary": extraction_summary,
-                "page_details": all_page_content,  # Original detailed data
+                # "content": total_content,  # Combined content for compatibility
+                "texts": texts,
+                "tables": tables, 
+                "images": images,
+                "text_summaries": text_summaries,
+                "table_summaries": table_summaries,
+                "image_summaries": image_summaries,
                 "metadata": {
-                    "page_count": total_pages,
-                    "content_length": len(vector_optimized_content),
-                    "display_length": len(display_formatted_content),
-                    "has_tables": extraction_summary["total_tables"] > 0,
-                    "has_images": extraction_summary["total_images"] > 0,
-                    "extraction_methods_used": list(set(
-                        method for page in all_page_content 
-                        for method in page["extraction_methods"]
-                    )),
-                    "vector_optimized": True  # Flag indicating content is optimized for vectors
+                    "extraction_method": "multimodal_unstructured",
+                    "page_count": len(chunks),
+                    # "content_length": len(total_content),
+                    "text_count": len(texts),
+                    "table_count": len(tables),
+                    "image_count": len(images),
+                    "has_vision_analysis": self.image_analyze_chain is not None
                 }
             }
             
+            logger.info(f"Successfully processed {filename}: "
+                       f"{len(text_summaries)} texts, {len(table_summaries)} tables, {len(image_summaries)} images")
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"PDF processing failed for {filename}: {e}")
+            logger.error(f"Error processing PDF {filename}: {e}")
             return {
                 "filename": filename,
-                "total_content": f"[Processing Error: {str(e)}]",
-                "extraction_method": "error",
-                "metadata": {"page_count": 0, "content_length": 0, "vector_optimized": False}
+                "content": f"Error processing PDF: {str(e)}",
+                "texts": [],
+                "tables": [],
+                "images": [],
+                "text_summaries": [],
+                "table_summaries": [],
+                "image_summaries": [],
+                "metadata": {"extraction_method": "error", "error": str(e)}
             }
+
+
+# Legacy compatibility - alias for existing code
+PDFProcessor = MultimodalPDFProcessor

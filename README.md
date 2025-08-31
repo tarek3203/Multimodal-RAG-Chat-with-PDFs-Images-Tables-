@@ -1,188 +1,264 @@
-# 🤖 AI Chatbot with RAG (Retrieval Augmented Generation)
+# 🤖 Multimodal PDF RAG Chatbot
 
-A modern conversational AI chatbot that can chat normally and analyze PDF documents using advanced RAG techniques. Features a Claude-like interface where users can attach documents directly in the conversation.
+A powerful conversational AI chatbot that can analyze PDF documents using advanced multimodal capabilities. The system extracts and understands text, tables, and images from PDFs, then allows natural language querying through a local RAG (Retrieval Augmented Generation) system.
 
 ## ✨ Features
 
-- **💬 Normal Conversation**: Chat with AI without any documents
-- **📄 PDF Analysis**: Upload PDFs and ask questions about their content
-- **🔍 Advanced Processing**: Extracts text, images, tables from PDFs using GPT-4 Vision
-- **🧠 Conversational Memory**: Maintains context throughout the conversation
-- **⚡ Fast Responses**: Uses Groq for lightning-fast inference
-- **🎯 Smart Interface**: Claude-like chat interface with document attachment
+### 🔍 Advanced PDF Processing
+- **Text Extraction**: Direct text extraction and OCR capabilities
+- **Table Analysis**: Smart table detection and structured data extraction
+- **Image Understanding**: Vision AI analysis of charts, diagrams, and embedded images
+- **Multimodal Integration**: Unified understanding across all content types
 
-## 🛠️ Technology Stack
+### 💬 Intelligent Chat Interface
+- **Context-Aware Responses**: Maintains conversation history and context
+- **Source Attribution**: Tracks which documents and content types inform each answer
+- **Multimodal Retrieval**: Searches across text, table, and image content simultaneously
+- **Natural Language Processing**: Understands complex queries about document content
 
-- **Frontend**: Streamlit for modern web UI
-- **LLM**: Groq Mixtral-8x7B for fast chat responses
-- **Vision**: OpenAI GPT-4o for PDF image processing
-- **Vector Store**: Pinecone for document embeddings and retrieval
-- **PDF Processing**: PyPDF2 + pdf2image for comprehensive extraction
+### 🏠 Local-First Architecture
+- **FAISS Vector Store**: Local vector database with no external dependencies
+- **Privacy Focused**: Documents never leave your system for vector storage
+- **Fast Performance**: Local embeddings and retrieval for quick responses
+- **Scalable**: Handle multiple documents with efficient indexing
 
-## 📦 Installation
+## 🏗️ System Architecture
 
-### 1. Clone and Setup
+```
+PDF Upload → Unstructured Processing → Content Analysis → Vector Storage → Chat Interface
+     ↓              ↓                      ↓               ↓              ↓
+[PDF Files] → [Text/Tables/Images] → [AI Summaries] → [FAISS Index] → [Groq LLM]
+```
 
+### Core Components
+
+1. **PDF Processor** (`services/pdf_processor.py`)
+   - Uses Unstructured library for comprehensive extraction
+   - Separates text, tables, and images
+   - Generates AI-powered summaries for each content type
+
+2. **Multimodal RAG System** (`services/rag_system.py`) 
+   - FAISS vector store for local document indexing
+   - Semantic search across all content types
+   - Context synthesis and response generation
+
+3. **Embedding Service** (`vector_services/embeddings.py`)
+   - HuggingFace sentence transformers for embeddings
+   - Document preparation and linking
+   - Mac M1 optimized (CPU-based for stability)
+
+4. **Prompt Management** (`prompts.py`)
+   - Centralized prompt templates
+   - Optimized for different content types
+   - Context-aware conversation handling
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+**System Dependencies** (install via your system package manager):
 ```bash
-git clone <your-repo-url>
-cd rag-chatbot
-python -m venv venv
+# macOS
+brew install poppler tesseract libmagic
 
-# Activate virtual environment
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
+# Ubuntu/Debian
+sudo apt-get install poppler-utils tesseract-ocr libmagic-dev
 
-# Install dependencies
-pip install -r requirements.txt
+# Windows - see unstructured documentation for setup
 ```
 
-### 2. Environment Setup
+**API Keys Required**:
+- **GROQ_API_KEY** (required) - Get from [console.groq.com](https://console.groq.com)
+- **GOOGLE_API_KEY** or **OPENAI_API_KEY** (recommended) - For image analysis
 
-Create a `.env` file in the root directory:
+### Installation
 
-```env
-# Required API Keys
-OPENAI_API_KEY=your_openai_api_key_here
-GROQ_API_KEY=your_groq_api_key_here
-PINECONE_API_KEY=your_pinecone_api_key_here
+1. **Clone and Setup Environment**
+   ```bash
+   git clone <your-repo-url>
+   cd multimodal-pdf-rag-chatbot
+   python -m venv venv
+   
+   # Activate virtual environment
+   # Windows: venv\Scripts\activate
+   # macOS/Linux: source venv/bin/activate
+   
+   pip install -r requirements.txt
+   ```
 
-# Pinecone Configuration
-PINECONE_INDEX_NAME=rag-chatbot-index
+2. **Configure Environment Variables**
+   
+   Create a `.env` file in the project root:
+   ```env
+   # Required for text generation and summarization
+   GROQ_API_KEY=your_groq_api_key_here
+   
+   # Vision capabilities (choose one or both)
+   GOOGLE_API_KEY=your_google_api_key_here      # Recommended: Cheaper, fast
+   OPENAI_API_KEY=your_openai_api_key_here      # Fallback: More expensive
+   
+   # Optional: Customize models
+   GROQ_MODEL=llama-3.1-8b-instant
+   EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+   MAX_PDF_PAGES=20
+   ```
+
+3. **Run the Application**
+   ```bash
+   streamlit run app.py
+   ```
+
+The app will open at `http://localhost:8501`
+
+## 📱 How to Use
+
+### 1. Upload Documents
+- Use the **sidebar** to upload PDF files
+- Click "🚀 Process Files" to analyze uploaded documents
+- Monitor processing progress and content extraction details
+
+### 2. Chat with Your Documents
+- Ask questions in the **main chat area**
+- The system will search across all content types (text, tables, images)
+- Get responses with source attribution and content type information
+
+### 3. Example Queries
+```
+"What are the main findings in the research paper?"
+"Show me the financial data from the quarterly report"
+"What does the diagram on page 5 illustrate?"
+"Compare the revenue figures across different years"
+"Summarize the key points from all uploaded documents"
 ```
 
-### 3. Get API Keys
+## ⚙️ Configuration Options
 
-1. **OpenAI API Key**: https://platform.openai.com/api-keys
-2. **Groq API Key**: https://console.groq.com/keys
-3. **Pinecone API Key**: https://app.pinecone.io/
+### Environment Variables
 
-### 4. Setup Pinecone Index
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROQ_API_KEY` | - | **Required** - Groq API key for text generation |
+| `GOOGLE_API_KEY` | - | Google API key for Gemini vision analysis |
+| `OPENAI_API_KEY` | - | OpenAI API key (fallback for vision) |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model for text generation |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | HuggingFace embedding model |
+| `MAX_PDF_PAGES` | `20` | Maximum pages to process per PDF |
+| `CHUNK_SIZE` | `1000` | Text chunk size for vector storage |
+| `VISION_MODEL_PRIORITY` | `gemini,openai` | Order to try vision APIs |
 
-1. Go to https://app.pinecone.io/
-2. Create a new index with these settings:
-   - **Name**: `rag-chatbot-index` (or match your `.env` file)
-   - **Dimensions**: `1536` (for OpenAI embeddings)
-   - **Metric**: `cosine`
-   - **Cloud**: Choose your preferred region
+### Advanced Configuration
 
-## 🚀 Usage
+Edit `config.py` to customize:
+- Vector store settings
+- Processing limits  
+- Model configurations
+- File paths and directories
 
-### Start the Application
+## 🧠 AI Models Used
 
-```bash
-streamlit run app.py
-```
+### Text Generation & Summarization
+- **Groq Llama-3.1 8B**: Fast, efficient text generation and summarization
+- **Cost**: ~$0.05 per 1M tokens (very affordable)
 
-The app will open in your browser at `http://localhost:8501`
+### Vision Analysis (Choose One)
+- **Google Gemini 1.5 Flash**: Preferred for image analysis
+  - **Cost**: ~$0.075 per 1M tokens (27x cheaper than OpenAI)
+  - **Speed**: Very fast processing
+  - **Capability**: Excellent for charts, diagrams, and document images
 
-### How to Use
+- **OpenAI GPT-4V**: Fallback option
+  - **Cost**: ~$2.50 per 1M tokens
+  - **Capability**: Highest quality vision analysis
 
-1. **Normal Chat**: Just type your message and press Enter - chat with the AI normally
-2. **Upload Documents**: 
-   - Click "📎 Attach Documents" above the chat input
-   - Upload one or more PDF files
-   - Click "📤 Upload & Process Files"
-3. **Ask Questions**: Once documents are uploaded, ask questions about their content
-4. **Mixed Conversation**: You can switch between normal chat and document questions seamlessly
+### Embeddings
+- **HuggingFace Sentence Transformers**: Local, free embeddings
+- **Model**: `all-MiniLM-L6-v2` (384 dimensions, good performance)
 
-### Example Interactions
+## 📊 System Monitoring
 
-```
-User: Hello! How are you?
-AI: Hello! I'm doing great, thank you for asking! How can I help you today?
+The sidebar shows real-time system status:
+- **Documents**: Number of processed documents in vector store
+- **Content Types**: Breakdown of text, tables, and images
+- **API Status**: Which APIs are configured and available
+- **Conversation Length**: Current chat history size
 
-User: [uploads a research paper PDF]
-AI: Great! I've processed your document. You can now ask me questions about its content.
-
-User: What is the main conclusion of this paper?
-AI: Based on the document, the main conclusion is... [analysis based on PDF content]
-
-User: Thanks! Can you also tell me about the weather today?
-AI: I don't have access to current weather data, but I can help you with...
-```
-
-## 🔧 Configuration
-
-### PDF Processing Settings
-
-The app automatically:
-- Tries text extraction first (fast)
-- Falls back to vision processing for image-based PDFs
-- Processes up to 15 pages with vision (configurable in `pdf_processor.py`)
-- Optimizes images for better performance
-
-### Memory Management
-
-- Keeps last 10 conversation exchanges in memory
-- Uses last 3 exchanges for conversation context
-- Automatically manages context window size
-
-## 🐛 Troubleshooting
+## 🔧 Troubleshooting
 
 ### Common Issues
 
-1. **"st.experimental_rerun not found"**
-   - Fixed in the updated code (now uses `st.rerun()`)
+1. **"No vision model available"**
+   - Add `GOOGLE_API_KEY` or `OPENAI_API_KEY` to your `.env` file
+   - Image analysis will be limited without vision APIs
 
-2. **LangChain deprecation warnings**
-   - Updated to use modern LangChain patterns without deprecated memory classes
+2. **PDF processing fails**
+   - Ensure system dependencies are installed (`poppler`, `tesseract`)
+   - Check PDF file isn't password protected or corrupted
 
-3. **PDF processing fails**
-   - Check if you have the required system dependencies for pdf2image
-   - On macOS: `brew install poppler`
-   - On Ubuntu: `sudo apt-get install poppler-utils`
-   - On Windows: Download poppler binary
+3. **Out of memory errors**
+   - Reduce `MAX_PDF_PAGES` in config
+   - Process smaller files or fewer files at once
 
-4. **Pinecone connection errors**
-   - Verify your API key and index name in `.env`
-   - Ensure your index has the correct dimensions (1536)
+4. **Slow performance**
+   - Vision analysis can be slow - consider using Gemini over OpenAI
+   - Reduce concurrent processing in config
 
-5. **OpenAI API errors**
-   - Check your API key and billing status
-   - Ensure you have access to GPT-4o model
+### Performance Tips
 
-## 🔄 Recent Updates
+- **Use Google Gemini** for vision analysis (much faster and cheaper than OpenAI)
+- **Process documents in batches** rather than all at once
+- **Clear old documents** periodically to reduce vector store size
+- **Monitor API usage** to avoid rate limits
 
-- ✅ Fixed `st.experimental_rerun()` deprecation
-- ✅ Replaced deprecated LangChain memory with simple conversation management
-- ✅ Added Claude-like interface with document attachment in chat
-- ✅ Improved PDF processing with intelligent fallback
-- ✅ Updated to latest model versions (GPT-4o, Mixtral-8x7B)
-- ✅ Enhanced error handling and user feedback
-
-## 📝 File Structure
+## 📁 Project Structure
 
 ```
-rag-chatbot/
-├── app.py                 # Main Streamlit application
-├── rag_system.py         # RAG logic and conversation management
-├── pdf_processor.py      # PDF text and vision extraction
-├── requirements.txt      # Python dependencies
-├── .env                  # Environment variables (create this)
-└── README.md            # This file
+multimodal-pdf-rag-chatbot/
+├── app.py                          # Main Streamlit application
+├── config.py                       # Configuration management
+├── prompts.py                      # Centralized prompt templates
+├── requirements.txt                # Python dependencies
+├── .env                           # Environment variables (create this)
+├── services/
+│   ├── pdf_processor.py           # Multimodal PDF processing
+│   └── rag_system.py             # Enhanced RAG pipeline
+├── vector_services/
+│   ├── embeddings.py              # Embedding service
+│   └── faiss_manager.py          # FAISS vector store management
+├── vector_storage/                # Local vector database (auto-created)
+└── models/                       # Model cache (auto-created)
 ```
+
+## 🔄 Upgrading from Previous Versions
+
+If you have an existing system:
+
+1. **Backup your data** (vector_storage folder)
+2. **Update dependencies**: `pip install -r requirements.txt`
+3. **Add new environment variables** to your `.env` file
+4. **Clear existing documents** if you encounter compatibility issues
+
+The new system maintains FAISS compatibility but uses enhanced document processing.
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 💡 Tips for Best Results
+## 🙏 Acknowledgments
 
-1. **For better PDF processing**: Use PDFs with clear, readable text
-2. **For vision processing**: Ensure images in PDFs are high quality
-3. **For conversations**: Be specific in your questions about documents
-4. **For performance**: Clear chat memory periodically for very long conversations
+- **Unstructured.io** for comprehensive PDF processing
+- **LangChain** for the RAG framework
+- **Meta AI** for Llama models via Groq
+- **Google** for Gemini vision capabilities
+- **Streamlit** for the user interface
 
 ---
 
-*Built with ❤️ using Streamlit, LangChain, OpenAI, Groq, and Pinecone*
+**Built with ❤️ for document intelligence and conversational AI**
