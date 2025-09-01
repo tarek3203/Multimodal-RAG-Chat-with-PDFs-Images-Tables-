@@ -6,6 +6,7 @@ import streamlit as st
 import logging
 from pathlib import Path
 import time
+import asyncio
 
 from services.pdf_processor import MultimodalPDFProcessor
 from services.rag_system import MultimodalRAGSystem
@@ -118,6 +119,13 @@ def get_ai_response(user_message: str, has_documents: bool) -> str:
     else:
         return st.session_state.rag_system.chat_without_documents(user_message)
 
+def get_ai_response_stream(user_message: str, has_documents: bool):
+    """Get streaming AI response based on context"""
+    if has_documents:
+        return st.session_state.rag_system.query_documents_stream(user_message)
+    else:
+        return st.session_state.rag_system.chat_without_documents_stream(user_message)
+
 def main():
     # Ensure directories exist
     if not Config.MODELS_FOLDER.exists():
@@ -205,14 +213,28 @@ def main():
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Get AI response
+            # Get AI response with streaming
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response = get_ai_response(prompt, has_documents)
-                    st.markdown(response)
+                response_placeholder = st.empty()
+                full_response = ""
+                
+                # Stream the response with natural typing speed
+                for chunk in get_ai_response_stream(prompt, has_documents):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                    
+                    # Add natural typing delay based on chunk size
+                    # Simulate ~50 WPM typing speed (average human typing)
+                    words_in_chunk = len(chunk.split())
+                    delay = min(words_in_chunk * 0.12, 0.5)  # Max 0.5s delay
+                    if delay > 0:
+                        time.sleep(delay)
+                
+                # Final response without cursor
+                response_placeholder.markdown(full_response)
             
             # Add assistant response
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
             
             st.rerun()
     

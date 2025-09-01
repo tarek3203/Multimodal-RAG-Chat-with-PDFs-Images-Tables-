@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import uuid
 import base64
+import time
 from langchain.schema.document import Document
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
@@ -69,8 +70,8 @@ class MultimodalRAGSystem:
                 api_key=Config.GROQ_API_KEY,
                 model=Config.GROQ_MODEL,
                 temperature=0.1,
-                # stream=True,
-                # verbose = False
+                streaming=True,
+                verbose=False
             )
             logger.info(f"Groq LLM loaded: {Config.GROQ_MODEL}")
             return llm
@@ -224,6 +225,75 @@ class MultimodalRAGSystem:
             logger.error(f"Error adding documents to RAG system: {e}")
             raise
     
+    def query_documents_stream(self, question: str):
+        """Query the RAG system with streaming response"""
+        if not self.llm:
+            yield "LLM not available. Please check your GROQ_API_KEY."
+            return
+        
+        try:
+            # Retrieve relevant documents using the retriever
+            docs = self.retriever.invoke(question)
+            
+            if not docs:
+                yield "I couldn't find relevant information for your question."
+                return
+            
+            # Parse documents to separate images from text
+            parsed_docs = self._parse_retrieved_docs(docs)
+            
+            # Format conversation history
+            history = ""
+            if self.conversation_history:
+                recent_history = self.conversation_history[-3:]
+                history_parts = []
+                for exchange in recent_history:
+                    history_parts.extend([
+                        f"Human: {exchange['user']}",
+                        f"Assistant: {exchange['assistant']}"
+                    ])
+                history = "\n".join(history_parts)
+            
+            # Build prompt using parsed content
+            prompt = self._build_multimodal_prompt(question, parsed_docs, history)
+            
+            # Generate streaming response with natural pacing
+            response_text = ""
+            buffer = ""
+            word_count = 0
+            
+            for chunk in self.llm.stream(prompt):
+                if hasattr(chunk, 'content') and chunk.content:
+                    response_text += chunk.content
+                    buffer += chunk.content
+                    
+                    # Count words to control release timing
+                    word_count += len(chunk.content.split())
+                    
+                    # Release buffer when we have enough content (every 2-4 words)
+                    if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
+                        yield buffer
+                        buffer = ""
+                        word_count = 0
+            
+            # Yield any remaining content
+            if buffer:
+                yield buffer
+            
+            # Update conversation history with complete response
+            self.conversation_history.append({
+                "user": question,
+                "assistant": response_text
+            })
+            
+            # Keep only last 6 exchanges
+            if len(self.conversation_history) > 6:
+                self.conversation_history = self.conversation_history[-6:]
+                
+        except Exception as e:
+            logger.error(f"Error generating streaming response: {e}")
+            yield f"Error generating response: {e}"
+
     def query_documents(self, question: str) -> str:
         """Query the RAG system with proper document parsing"""
         if not self.llm:
@@ -287,9 +357,22 @@ class MultimodalRAGSystem:
             # Build prompt using parsed content
             prompt = self._build_multimodal_prompt(question, parsed_docs, history)
             
-            # Generate response
+            # Generate response - handle streaming
             response = self.llm.invoke(prompt)
-            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Handle streaming response
+            if hasattr(response, '__iter__') and hasattr(response, 'content'):
+                # Regular response object
+                response_text = response.content
+            elif hasattr(response, '__iter__'):
+                # Streaming response - collect all chunks
+                response_text = ""
+                for chunk in response:
+                    if hasattr(chunk, 'content') and chunk.content:
+                        response_text += chunk.content
+            else:
+                # Fallback
+                response_text = str(response)
             
             # Update conversation history
             self.conversation_history.append({
@@ -307,6 +390,50 @@ class MultimodalRAGSystem:
             logger.error(f"Error generating response: {e}")
             return f"Error generating response: {e}"
     
+    def chat_without_documents_stream(self, message: str):
+        """Handle normal conversation without documents with streaming"""
+        if not self.llm:
+            yield "Language model not available. Please check your API configuration."
+            return
+        
+        try:
+            conversation_context = self._format_conversation_context()
+            prompt = PromptTemplates.get_general_chat_prompt()
+            
+            # Generate streaming response with natural pacing
+            response = ""
+            buffer = ""
+            word_count = 0
+            
+            for chunk in self.llm.stream(prompt.format(
+                conversation_context=conversation_context,
+                message=message
+            )):
+                if hasattr(chunk, 'content') and chunk.content:
+                    response += chunk.content
+                    buffer += chunk.content
+                    
+                    # Count words to control release timing
+                    word_count += len(chunk.content.split())
+                    
+                    # Release buffer when we have enough content (every 2-4 words)
+                    if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
+                        yield buffer
+                        buffer = ""
+                        word_count = 0
+            
+            # Yield any remaining content
+            if buffer:
+                yield buffer
+            
+            # Update conversation history with complete response
+            self._update_conversation(message, response)
+            
+        except Exception as e:
+            error_msg = f"Error processing message: {str(e)}"
+            logger.error(error_msg)
+            yield error_msg
+
     def chat_without_documents(self, message: str) -> str:
         """Handle normal conversation without documents"""
         if not self.llm:
@@ -321,7 +448,19 @@ class MultimodalRAGSystem:
                 message=message
             ))
             
-            response = response_obj.content if hasattr(response_obj, 'content') else str(response_obj)
+            # Handle streaming response
+            if hasattr(response_obj, '__iter__') and hasattr(response_obj, 'content'):
+                # Regular response object
+                response = response_obj.content
+            elif hasattr(response_obj, '__iter__'):
+                # Streaming response - collect all chunks
+                response = ""
+                for chunk in response_obj:
+                    if hasattr(chunk, 'content') and chunk.content:
+                        response += chunk.content
+            else:
+                # Fallback
+                response = str(response_obj)
             
             self._update_conversation(message, response)
             return response
