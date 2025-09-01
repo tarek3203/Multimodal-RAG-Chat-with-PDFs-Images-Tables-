@@ -68,7 +68,9 @@ class MultimodalRAGSystem:
             llm = ChatGroq(
                 api_key=Config.GROQ_API_KEY,
                 model=Config.GROQ_MODEL,
-                temperature=0.1
+                temperature=0.1,
+                # stream=True,
+                # verbose = False
             )
             logger.info(f"Groq LLM loaded: {Config.GROQ_MODEL}")
             return llm

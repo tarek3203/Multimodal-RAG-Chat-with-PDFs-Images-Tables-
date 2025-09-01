@@ -45,65 +45,43 @@ Provide a comprehensive description that would help someone understand the conte
 Be specific about any data, numbers, or text you can identify."""
 
     # Enhanced RAG Query Prompt with Smart Relevance Detection
-    ENHANCED_RAG_QUERY_PROMPT = """You are an intelligent AI assistant that provides well-structured, professional responses. Your primary task is to determine if the retrieved document context is relevant to the user's question, then respond accordingly.
+    ENHANCED_RAG_QUERY_PROMPT = """You are a professional AI assistant that provides helpful, accurate responses. You have access to relevant document information that may help answer the user's question.
 
 **CONVERSATION HISTORY:**
 {conversation_history}
 
-**RETRIEVED DOCUMENT CONTEXT:**
+**DOCUMENT CONTEXT:**
 {context_text}
 
 **USER QUESTION:** {question}
 
-**CRITICAL INSTRUCTION - RELEVANCE ASSESSMENT:**
-Before responding, analyze if the document context is semantically relevant to the user's question:
-
-1. **HIGH RELEVANCE (Use document context)** - If the context contains information that directly or substantially relates to the question:
-   - Provide a detailed, well-structured response using the document information
-   - Use bullet points, bold formatting, and specific data from the context
-   - Cite relevant facts, figures, and details from the documents
-
-2. **LOW/NO RELEVANCE (Natural conversation)** - If the context is unrelated to the question (e.g., greeting, personal questions, technical documents):
-   - Respond naturally as a helpful AI assistant WITHOUT forcing document content
-   - Do NOT mention or analyze irrelevant document context
-   - Engage in natural conversation appropriate to the question type
-   - Keep responses concise and friendly
-
-**RESPONSE FORMATTING (when using document context):**
-- Use **bold** for important points and headings
-- Use bullet points (•) or numbered lists for multiple items
-- Include relevant numbers, percentages, or data points
-- Structure longer responses with clear sections
+**INSTRUCTIONS:**
+- If the document context contains relevant information for the user's question, use it naturally in your response
+- Structure your response professionally with clear formatting when appropriate
+- Use **bold** for key points and bullet points for lists when helpful
+- Include specific data, numbers, and details from the documents when relevant
+- If the context isn't relevant to the question, respond naturally as a helpful assistant
+- Don't mention the document context or explain your process - just provide a direct, useful answer
+- Keep responses conversational and professional
 
 **RESPONSE:**"""
 
     # Smart RAG Query Prompt without Conversation History
-    ENHANCED_RAG_QUERY_SIMPLE_PROMPT = """You are an intelligent AI assistant that provides well-structured, professional responses. Your primary task is to determine if the retrieved document context is relevant to the user's question, then respond accordingly.
+    ENHANCED_RAG_QUERY_SIMPLE_PROMPT = """You are a professional AI assistant that provides helpful, accurate responses. You have access to relevant document information that may help answer the user's question.
 
-**RETRIEVED DOCUMENT CONTEXT:**
+**DOCUMENT CONTEXT:**
 {context_text}
 
 **USER QUESTION:** {question}
 
-**CRITICAL INSTRUCTION - RELEVANCE ASSESSMENT:**
-Before responding, analyze if the document context is semantically relevant to the user's question:
-
-1. **HIGH RELEVANCE (Use document context)** - If the context contains information that directly or substantially relates to the question:
-   - Provide a detailed, well-structured response using the document information
-   - Use bullet points, bold formatting, and specific data from the context
-   - Cite relevant facts, figures, and details from the documents
-
-2. **LOW/NO RELEVANCE (Natural conversation)** - If the context is unrelated to the question (e.g., greeting vs. financial data, personal questions vs. technical documents):
-   - Respond naturally as a helpful AI assistant WITHOUT forcing document content
-   - Do NOT mention or analyze irrelevant document context
-   - Engage in natural conversation appropriate to the question type
-   - Keep responses concise and friendly
-
-**RESPONSE FORMATTING (when using document context):**
-- Use **bold** for important points and headings
-- Use bullet points (•) or numbered lists for multiple items
-- Include relevant numbers, percentages, or data points
-- Structure longer responses with clear sections
+**INSTRUCTIONS:**
+- If the document context contains relevant information for the user's question, use it naturally in your response
+- Structure your response professionally with clear formatting when appropriate
+- Use **bold** for key points and bullet points for lists when helpful
+- Include specific data, numbers, and details from the documents when relevant
+- If the context isn't relevant to the question, respond naturally as a helpful assistant
+- Don't mention the document context or explain your process - just provide a direct, useful answer
+- Keep responses conversational and professional
 
 **RESPONSE:**"""
 
