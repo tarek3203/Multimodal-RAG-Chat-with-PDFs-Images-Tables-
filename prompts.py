@@ -83,6 +83,20 @@ Synthesize this information to provide comprehensive context about the document'
 Focus on key facts, data points, and relationships between different elements.
 """
 
+    # Multimodal RAG Query Processing Prompt (for mixed content with images)
+    MULTIMODAL_RAG_QUERY_PROMPT = """Answer the question based only on the following context, which can include text, tables, and images.
+
+Context: {context_text}
+Question: {question}
+
+Instructions:
+- Use all the provided context including any visual information from images
+- Be specific about data, numbers, and relationships
+- If referencing visual elements, describe what you see
+- Provide a comprehensive answer based on the multimodal context
+
+Answer:"""
+
     # Chat Without Documents Prompt
     GENERAL_CHAT_PROMPT = """
 You are a helpful AI assistant having a natural conversation.
@@ -131,6 +145,11 @@ Response:"""
     def get_rag_query_prompt(cls):
         """Get prompt for RAG-based query answering"""
         return ChatPromptTemplate.from_template(cls.RAG_QUERY_PROMPT)
+    
+    @classmethod
+    def get_multimodal_rag_query_prompt(cls):
+        """Get prompt for multimodal RAG-based query answering"""
+        return ChatPromptTemplate.from_template(cls.MULTIMODAL_RAG_QUERY_PROMPT)
     
     @classmethod
     def get_multimodal_context_prompt(cls):

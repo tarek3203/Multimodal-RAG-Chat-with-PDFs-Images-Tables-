@@ -296,49 +296,49 @@ class MultimodalPDFProcessor:
             # image extractions
             images = self.get_images(chunks)
 
-            # 🔍 PRINT EXTRACTED CONTENT FOR DEBUGGING
-            print("=" * 80)
-            print(f"📄 EXTRACTION DEBUG FOR: {filename}")
-            print("=" * 80)
+            # # 🔍 PRINT EXTRACTED CONTENT FOR DEBUGGING
+            # print("=" * 80)
+            # print(f"📄 EXTRACTION DEBUG FOR: {filename}")
+            # print("=" * 80)
             
-            print(f"📝 TEXTS EXTRACTED ({len(texts)} items):")
-            for i, text in enumerate(texts):
-                print(f"  Text {i+1}: {str(text)[:200]}..." if len(str(text)) > 200 else f"  Text {i+1}: {str(text)}")
-            print()
+            # print(f"📝 TEXTS EXTRACTED ({len(texts)} items):")
+            # for i, text in enumerate(texts):
+            #     print(f"  Text {i+1}: {str(text)[:200]}..." if len(str(text)) > 200 else f"  Text {i+1}: {str(text)}")
+            # print()
             
-            print(f"📊 TABLES EXTRACTED ({len(tables)} items):")
-            for i, table in enumerate(tables):
-                print(f"  Table {i+1}: {str(table)[:200]}..." if len(str(table)) > 200 else f"  Table {i+1}: {str(table)}")
-            print()
+            # print(f"📊 TABLES EXTRACTED ({len(tables)} items):")
+            # for i, table in enumerate(tables):
+            #     print(f"  Table {i+1}: {str(table)[:200]}..." if len(str(table)) > 200 else f"  Table {i+1}: {str(table)}")
+            # print()
             
-            print(f"🖼️  IMAGES EXTRACTED ({len(images)} items):")
-            for i, image in enumerate(images):
-                print(f"  Image {i+1}: {str(image)[:100]}..." if len(str(image)) > 100 else f"  Image {i+1}: {str(image)}")
-            print()
+            # print(f"🖼️  IMAGES EXTRACTED ({len(images)} items):")
+            # for i, image in enumerate(images):
+            #     print(f"  Image {i+1}: {str(image)[:100]}..." if len(str(image)) > 100 else f"  Image {i+1}: {str(image)}")
+            # print()
 
             # Generate summaries
             text_summaries, table_summaries, image_summaries = self._summarize_elements(texts, tables, images)
             
-            # 🔍 PRINT SUMMARIES FOR DEBUGGING
-            print(f"📝 TEXT SUMMARIES ({len(text_summaries)} items):")
-            for i, summary in enumerate(text_summaries):
-                print(f"  Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Summary {i+1}: {summary}")
-            print()
+            # # 🔍 PRINT SUMMARIES FOR DEBUGGING
+            # print(f"📝 TEXT SUMMARIES ({len(text_summaries)} items):")
+            # for i, summary in enumerate(text_summaries):
+            #     print(f"  Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Summary {i+1}: {summary}")
+            # print()
             
-            print(f"📊 TABLE SUMMARIES ({len(table_summaries)} items):")
-            for i, summary in enumerate(table_summaries):
-                print(f"  Table Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Table Summary {i+1}: {summary}")
-            print()
+            # print(f"📊 TABLE SUMMARIES ({len(table_summaries)} items):")
+            # for i, summary in enumerate(table_summaries):
+            #     print(f"  Table Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Table Summary {i+1}: {summary}")
+            # print()
             
-            print(f"🖼️  IMAGE SUMMARIES ({len(image_summaries)} items):")
-            for i, summary in enumerate(image_summaries):
-                print(f"  Image Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Image Summary {i+1}: {summary}")
-            print()
+            # print(f"🖼️  IMAGE SUMMARIES ({len(image_summaries)} items):")
+            # for i, summary in enumerate(image_summaries):
+            #     print(f"  Image Summary {i+1}: {summary[:150]}..." if len(summary) > 150 else f"  Image Summary {i+1}: {summary}")
+            # print()
             
-            print("=" * 80)
-            print("END DEBUG")
-            print("=" * 80)
-            print()
+            # print("=" * 80)
+            # print("END DEBUG")
+            # print("=" * 80)
+            # print()
             
             
             # Cleanup temporary files

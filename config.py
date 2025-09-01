@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Set environment variable to avoid tokenizer warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 class Config:
     """Configuration settings for the multimodal OCR RAG system"""
     
