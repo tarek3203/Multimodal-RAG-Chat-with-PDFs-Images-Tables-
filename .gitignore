@@ -26,6 +26,7 @@ MANIFEST
 
 # Virtual environments
 venv/
+tari/
 env/
 ENV/
 .env
