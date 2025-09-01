@@ -29,7 +29,9 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Fallback for vision
     
     # LLM Configuration
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")  # For text generation
+    # GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")  # For text generation
+    
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # For text generation
     
     # Embedding Configuration
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")

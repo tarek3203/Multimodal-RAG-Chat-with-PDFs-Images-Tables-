@@ -39,6 +39,9 @@ def initialize_session_state():
     
     if 'processing_status' not in st.session_state:
         st.session_state.processing_status = None
+    
+    if 'docs_cleared' not in st.session_state:
+        st.session_state.docs_cleared = False
 
 def process_uploaded_files(uploaded_files) -> bool:
     """Process uploaded PDF files with progress tracking"""
@@ -126,27 +129,9 @@ def main():
     with st.sidebar:
         st.title("📄 Document Upload")
         
-        # System status
+        # System status - only show document count
         stats = st.session_state.rag_system.get_stats()
-        
-        # Status metrics
-        st.subheader("📊 System Status")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Documents", stats["documents_in_vector_store"])
-            st.metric("LLM", "✅ Ready" if stats["llm_available"] else "❌ Missing")
-        
-        with col2:
-            st.metric("Conversations", stats["conversation_length"])
-            st.metric("Embedding", "✅ Ready")
-        
-        # Content breakdown if available
-        if stats.get("content_types"):
-            st.subheader("📋 Content Types")
-            content_types = stats["content_types"]
-            for content_type, count in content_types.items():
-                if count > 0:
-                    st.text(f"{content_type.title()}: {count}")
+        st.metric("Documents", stats["documents_in_vector_store"])
         
         st.divider()
         
@@ -156,13 +141,20 @@ def main():
             "Choose PDF files to analyze",
             type=["pdf"],
             accept_multiple_files=True,
-            help="Upload PDF documents for analysis. The system will extract text, tables, and images."
+            help="Upload PDF documents for analysis. Files will be processed automatically."
         )
         
-        if uploaded_files:
-            if st.button("🚀 Process Files", use_container_width=True, type="primary"):
-                if process_uploaded_files(uploaded_files):
+        # Auto-process files when uploaded (but not if docs were just cleared)
+        if uploaded_files and not st.session_state.docs_cleared:
+            # Check if any new files need processing
+            new_files = [f for f in uploaded_files if f.name not in st.session_state.processed_files]
+            if new_files:
+                if process_uploaded_files(new_files):
                     st.rerun()
+        
+        # Reset the cleared flag if user uploads new files after clearing
+        if uploaded_files and st.session_state.docs_cleared:
+            st.session_state.docs_cleared = False
         
         # Show processed files
         if st.session_state.processed_files:
@@ -172,9 +164,7 @@ def main():
         
         st.divider()
         
-        # Clear options
-        st.subheader("🧹 Clear Data")
-        
+        # Clear options - only keep chat and docs clearing
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🗨️ Clear Chat", use_container_width=True):
@@ -187,28 +177,9 @@ def main():
             if st.button("📄 Clear Docs", use_container_width=True):
                 st.session_state.rag_system.clear_documents()
                 st.session_state.processed_files = []
+                st.session_state.docs_cleared = True  # Set flag to prevent auto-processing
                 st.success("Documents cleared!")
                 st.rerun()
-        
-        # System information
-        st.divider()
-        st.subheader("ℹ️ System Info")
-        st.text(f"Vector Store: {stats['vector_store_type']}")
-        st.text(f"Embedding Model: {stats['embedding_model'].split('/')[-1]}")
-        
-        # API Status
-        api_status = []
-        if Config.GROQ_API_KEY:
-            api_status.append("✅ Groq (Chat)")
-        if Config.GOOGLE_API_KEY:
-            api_status.append("✅ Google (Vision)")
-        elif Config.OPENAI_API_KEY:
-            api_status.append("✅ OpenAI (Vision)")
-        else:
-            api_status.append("❌ Vision API Missing")
-        
-        for status in api_status:
-            st.text(status)
     
     # Main chat interface
     st.title("🤖 Multimodal PDF RAG Chatbot")
@@ -255,26 +226,6 @@ def main():
             "- 🖼️ Images with OCR and visual analysis\n"
             "- 💬 Multiple document conversations"
         )
-    
-    # System architecture info (expandable)
-    with st.expander("🔧 System Architecture", expanded=False):
-        st.markdown("""
-        **Enhanced Multimodal RAG Pipeline:**
-        
-        1. **PDF Processing**: Unstructured library extracts text, tables, and images
-        2. **Content Analysis**: 
-           - Text & Tables: Groq Llama-3.1 summarization
-           - Images: Google Gemini or OpenAI GPT-4V vision analysis
-        3. **Vector Storage**: FAISS local vector database with HuggingFace embeddings
-        4. **Retrieval**: Semantic search across all content types
-        5. **Generation**: Groq Llama-3.1 with multimodal context synthesis
-        
-        **Key Features:**
-        - Local vector storage (no data sent to external vector DBs)
-        - Multimodal understanding (text, tables, images)
-        - Conversation memory and context
-        - Source attribution and content type tracking
-        """)
 
 if __name__ == "__main__":
     main()

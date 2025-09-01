@@ -44,75 +44,85 @@ Table content: {element}
 Provide a comprehensive description that would help someone understand the content without seeing the image.
 Be specific about any data, numbers, or text you can identify."""
 
-    # RAG Query Processing Prompt
-    RAG_QUERY_PROMPT = """
-You are a helpful AI assistant analyzing PDF documents. Answer the user's question based on the provided context from the documents.
+    # Enhanced RAG Query Prompt with Smart Relevance Detection
+    ENHANCED_RAG_QUERY_PROMPT = """You are an intelligent AI assistant that provides well-structured, professional responses. Your primary task is to determine if the retrieved document context is relevant to the user's question, then respond accordingly.
 
-CONVERSATION HISTORY:
+**CONVERSATION HISTORY:**
+{conversation_history}
+
+**RETRIEVED DOCUMENT CONTEXT:**
+{context_text}
+
+**USER QUESTION:** {question}
+
+**CRITICAL INSTRUCTION - RELEVANCE ASSESSMENT:**
+Before responding, analyze if the document context is semantically relevant to the user's question:
+
+1. **HIGH RELEVANCE (Use document context)** - If the context contains information that directly or substantially relates to the question:
+   - Provide a detailed, well-structured response using the document information
+   - Use bullet points, bold formatting, and specific data from the context
+   - Cite relevant facts, figures, and details from the documents
+
+2. **LOW/NO RELEVANCE (Natural conversation)** - If the context is unrelated to the question (e.g., greeting, personal questions, technical documents):
+   - Respond naturally as a helpful AI assistant WITHOUT forcing document content
+   - Do NOT mention or analyze irrelevant document context
+   - Engage in natural conversation appropriate to the question type
+   - Keep responses concise and friendly
+
+**RESPONSE FORMATTING (when using document context):**
+- Use **bold** for important points and headings
+- Use bullet points (•) or numbered lists for multiple items
+- Include relevant numbers, percentages, or data points
+- Structure longer responses with clear sections
+
+**RESPONSE:**"""
+
+    # Smart RAG Query Prompt without Conversation History
+    ENHANCED_RAG_QUERY_SIMPLE_PROMPT = """You are an intelligent AI assistant that provides well-structured, professional responses. Your primary task is to determine if the retrieved document context is relevant to the user's question, then respond accordingly.
+
+**RETRIEVED DOCUMENT CONTEXT:**
+{context_text}
+
+**USER QUESTION:** {question}
+
+**CRITICAL INSTRUCTION - RELEVANCE ASSESSMENT:**
+Before responding, analyze if the document context is semantically relevant to the user's question:
+
+1. **HIGH RELEVANCE (Use document context)** - If the context contains information that directly or substantially relates to the question:
+   - Provide a detailed, well-structured response using the document information
+   - Use bullet points, bold formatting, and specific data from the context
+   - Cite relevant facts, figures, and details from the documents
+
+2. **LOW/NO RELEVANCE (Natural conversation)** - If the context is unrelated to the question (e.g., greeting vs. financial data, personal questions vs. technical documents):
+   - Respond naturally as a helpful AI assistant WITHOUT forcing document content
+   - Do NOT mention or analyze irrelevant document context
+   - Engage in natural conversation appropriate to the question type
+   - Keep responses concise and friendly
+
+**RESPONSE FORMATTING (when using document context):**
+- Use **bold** for important points and headings
+- Use bullet points (•) or numbered lists for multiple items
+- Include relevant numbers, percentages, or data points
+- Structure longer responses with clear sections
+
+**RESPONSE:**"""
+
+    # General Chat Prompt for No Documents
+    GENERAL_CHAT_PROMPT = """You are a helpful AI assistant having a natural conversation.
+
+**CONVERSATION HISTORY:**
 {conversation_context}
 
-DOCUMENT CONTEXT:
-{document_context}
+**USER MESSAGE:** {message}
 
-QUESTION: {question}
-
-Instructions:
-- Answer based on the document context provided
-- Be specific and cite relevant information from the documents
-- If referencing tables or charts, explain the data clearly
-- If the answer isn't in the documents, say so clearly
-- Maintain conversation continuity with previous exchanges
-- Be concise but thorough
-
-Answer:"""
-
-    # Multimodal Context Enhancement Prompt
-    MULTIMODAL_CONTEXT_PROMPT = """
-Based on the following extracted content from a PDF document, provide context for answering questions:
-
-TEXT CONTENT:
-{text_content}
-
-TABLE DATA:
-{table_content}
-
-IMAGE DESCRIPTIONS:
-{image_content}
-
-Synthesize this information to provide comprehensive context about the document's content.
-Focus on key facts, data points, and relationships between different elements.
-"""
-
-    # Multimodal RAG Query Processing Prompt (for mixed content with images)
-    MULTIMODAL_RAG_QUERY_PROMPT = """Answer the question based only on the following context, which can include text, tables, and images.
-
-Context: {context_text}
-Question: {question}
-
-Instructions:
-- Use all the provided context including any visual information from images
-- Be specific about data, numbers, and relationships
-- If referencing visual elements, describe what you see
-- Provide a comprehensive answer based on the multimodal context
-
-Answer:"""
-
-    # Chat Without Documents Prompt
-    GENERAL_CHAT_PROMPT = """
-You are a helpful AI assistant having a natural conversation.
-
-CONVERSATION HISTORY:
-{conversation_context}
-
-MESSAGE: {message}
-
-Instructions:
+**INSTRUCTIONS:**
 - Respond naturally and conversationally
 - Reference previous conversation when relevant
 - Be helpful and informative
 - If asked about documents, explain that no documents are currently loaded
+- Maintain a friendly, professional tone
 
-Response:"""
+**RESPONSE:**"""
 
     @classmethod
     def get_text_summary_prompt(cls):
@@ -142,19 +152,14 @@ Response:"""
         return ChatPromptTemplate.from_messages(messages)
     
     @classmethod
-    def get_rag_query_prompt(cls):
-        """Get prompt for RAG-based query answering"""
-        return ChatPromptTemplate.from_template(cls.RAG_QUERY_PROMPT)
+    def get_enhanced_rag_query_prompt(cls):
+        """Get enhanced prompt for RAG-based query answering with conversation history"""
+        return ChatPromptTemplate.from_template(cls.ENHANCED_RAG_QUERY_PROMPT)
     
     @classmethod
-    def get_multimodal_rag_query_prompt(cls):
-        """Get prompt for multimodal RAG-based query answering"""
-        return ChatPromptTemplate.from_template(cls.MULTIMODAL_RAG_QUERY_PROMPT)
-    
-    @classmethod
-    def get_multimodal_context_prompt(cls):
-        """Get prompt for multimodal context synthesis"""
-        return ChatPromptTemplate.from_template(cls.MULTIMODAL_CONTEXT_PROMPT)
+    def get_enhanced_rag_query_simple_prompt(cls):
+        """Get enhanced prompt for RAG-based query answering without conversation history"""
+        return ChatPromptTemplate.from_template(cls.ENHANCED_RAG_QUERY_SIMPLE_PROMPT)
     
     @classmethod
     def get_general_chat_prompt(cls):

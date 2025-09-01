@@ -102,33 +102,27 @@ class MultimodalRAGSystem:
         return {"images": b64_images, "texts": text_content}
     
     def _build_multimodal_prompt(self, question: str, parsed_docs: Dict[str, List[str]], 
-                                conversation_history: str = "") -> Any:
-        """Build multimodal prompt that can handle both text and images"""
+                                conversation_history: str = "") -> str:
+        """Build multimodal prompt using enhanced templates from prompts.py"""
         
         # Combine all text content
         context_text = "\n\n".join(parsed_docs["texts"])
         
-        # Create base prompt with text context
+        # Use enhanced prompts from prompts.py
         if conversation_history:
-            prompt_text = f"""Answer the question based on the provided context and conversation history.
-
-Conversation History:
-{conversation_history}
-
-Context: {context_text}
-Question: {question}
-
-Answer:"""
+            prompt_template = PromptTemplates.get_enhanced_rag_query_prompt()
+            prompt_text = prompt_template.format(
+                conversation_history=conversation_history,
+                context_text=context_text,
+                question=question
+            )
         else:
-            prompt_text = f"""Answer the question based on the provided context, which includes text, tables, and images.
-
-Context: {context_text}
-Question: {question}
-
-Answer:"""
+            prompt_template = PromptTemplates.get_enhanced_rag_query_simple_prompt()
+            prompt_text = prompt_template.format(
+                context_text=context_text,
+                question=question
+            )
         
-        # For Groq, we'll handle images differently since it doesn't support vision
-        # We'll just use the text content for now
         return prompt_text
     
     def add_documents(self, processed_documents: List[Dict[str, Any]]):
