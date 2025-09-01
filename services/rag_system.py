@@ -71,7 +71,10 @@ class MultimodalRAGSystem:
                 model=Config.GROQ_MODEL,
                 temperature=0.1,
                 streaming=True,
-                verbose=False
+                verbose=False,
+                max_tokens=500,  # Ensure adequate token limit
+                max_retries=3,    # Retry on failures
+                request_timeout=120  # 2 minute timeout
             )
             logger.info(f"Groq LLM loaded: {Config.GROQ_MODEL}")
             return llm
@@ -257,28 +260,59 @@ class MultimodalRAGSystem:
             # Build prompt using parsed content
             prompt = self._build_multimodal_prompt(question, parsed_docs, history)
             
-            # Generate streaming response with natural pacing
+            # Generate streaming response with natural pacing and completion tracking
             response_text = ""
             buffer = ""
             word_count = 0
+            last_chunk_time = time.time()
+            chunks_received = 0
             
-            for chunk in self.llm.stream(prompt):
-                if hasattr(chunk, 'content') and chunk.content:
-                    response_text += chunk.content
-                    buffer += chunk.content
+            try:
+                for chunk in self.llm.stream(prompt):
+                    if hasattr(chunk, 'content') and chunk.content:
+                        response_text += chunk.content
+                        buffer += chunk.content
+                        chunks_received += 1
+                        last_chunk_time = time.time()
+                        
+                        # Count words to control release timing
+                        word_count += len(chunk.content.split())
+                        
+                        # Release buffer when we have enough content (every 2-4 words)
+                        if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
+                            yield buffer
+                            buffer = ""
+                            word_count = 0
                     
-                    # Count words to control release timing
-                    word_count += len(chunk.content.split())
-                    
-                    # Release buffer when we have enough content (every 2-4 words)
-                    if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
-                        yield buffer
-                        buffer = ""
-                        word_count = 0
-            
-            # Yield any remaining content
-            if buffer:
-                yield buffer
+                    # Check for timeout or stalled streaming
+                    elif time.time() - last_chunk_time > 30:  # 30 second timeout
+                        logger.warning("Stream timeout detected, attempting completion")
+                        break
+                
+                # Yield any remaining content
+                if buffer:
+                    yield buffer
+                
+                # Check if response seems incomplete and try to complete it
+                if self._is_response_incomplete(response_text) and chunks_received > 5:
+                    logger.info("Response appears incomplete, attempting to complete...")
+                    completion = self._attempt_completion(response_text, question)
+                    if completion:
+                        yield f"\n\n{completion}"
+                        response_text += f"\n\n{completion}"
+                        
+            except Exception as stream_error:
+                logger.error(f"Streaming error: {stream_error}")
+                # Fallback to non-streaming if streaming fails
+                try:
+                    fallback_response = self.llm.invoke(prompt)
+                    if hasattr(fallback_response, 'content'):
+                        response_text = fallback_response.content
+                        yield response_text
+                except Exception as fallback_error:
+                    logger.error(f"Fallback error: {fallback_error}")
+                    yield "Error: Unable to generate complete response. Please try again."
+                    return
             
             # Update conversation history with complete response
             self.conversation_history.append({
@@ -400,31 +434,65 @@ class MultimodalRAGSystem:
             conversation_context = self._format_conversation_context()
             prompt = PromptTemplates.get_general_chat_prompt()
             
-            # Generate streaming response with natural pacing
+            # Generate streaming response with natural pacing and completion tracking
             response = ""
             buffer = ""
             word_count = 0
+            last_chunk_time = time.time()
+            chunks_received = 0
             
-            for chunk in self.llm.stream(prompt.format(
-                conversation_context=conversation_context,
-                message=message
-            )):
-                if hasattr(chunk, 'content') and chunk.content:
-                    response += chunk.content
-                    buffer += chunk.content
+            try:
+                for chunk in self.llm.stream(prompt.format(
+                    conversation_context=conversation_context,
+                    message=message
+                )):
+                    if hasattr(chunk, 'content') and chunk.content:
+                        response += chunk.content
+                        buffer += chunk.content
+                        chunks_received += 1
+                        last_chunk_time = time.time()
+                        
+                        # Count words to control release timing
+                        word_count += len(chunk.content.split())
+                        
+                        # Release buffer when we have enough content (every 2-4 words)
+                        if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
+                            yield buffer
+                            buffer = ""
+                            word_count = 0
                     
-                    # Count words to control release timing
-                    word_count += len(chunk.content.split())
-                    
-                    # Release buffer when we have enough content (every 2-4 words)
-                    if word_count >= 2 or buffer.endswith(('.', '!', '?', '\n')):
-                        yield buffer
-                        buffer = ""
-                        word_count = 0
-            
-            # Yield any remaining content
-            if buffer:
-                yield buffer
+                    # Check for timeout or stalled streaming
+                    elif time.time() - last_chunk_time > 30:  # 30 second timeout
+                        logger.warning("Stream timeout detected, attempting completion")
+                        break
+                
+                # Yield any remaining content
+                if buffer:
+                    yield buffer
+                
+                # Check if response seems incomplete and try to complete it
+                if self._is_response_incomplete(response) and chunks_received > 5:
+                    logger.info("Response appears incomplete, attempting to complete...")
+                    completion = self._attempt_completion(response, message)
+                    if completion:
+                        yield f"\n\n{completion}"
+                        response += f"\n\n{completion}"
+                        
+            except Exception as stream_error:
+                logger.error(f"Streaming error: {stream_error}")
+                # Fallback to non-streaming if streaming fails
+                try:
+                    fallback_response = self.llm.invoke(prompt.format(
+                        conversation_context=conversation_context,
+                        message=message
+                    ))
+                    if hasattr(fallback_response, 'content'):
+                        response = fallback_response.content
+                        yield response
+                except Exception as fallback_error:
+                    logger.error(f"Fallback error: {fallback_error}")
+                    yield "Error: Unable to generate complete response. Please try again."
+                    return
             
             # Update conversation history with complete response
             self._update_conversation(message, response)
@@ -494,6 +562,60 @@ class MultimodalRAGSystem:
         if len(self.conversation_history) > self.max_history:
             self.conversation_history = self.conversation_history[-self.max_history:]
     
+    def _is_response_incomplete(self, response: str) -> bool:
+        """Check if response appears to be incomplete"""
+        if not response:
+            return True
+        
+        # Check for common incomplete indicators
+        incomplete_indicators = [
+            response.endswith('...'),
+            response.endswith(' and'),
+            response.endswith(' or'),
+            response.endswith(' but'),
+            response.endswith(' with'),
+            response.endswith(' for'),
+            response.endswith(' to'),
+            response.endswith(' in'),
+            response.endswith(' on'),
+            response.endswith(' at'),
+            response.endswith(' by'),
+            response.endswith(' from'),
+            response.endswith(','),
+            response.endswith(' -'),
+            len(response.strip()) < 50,  # Too short
+        ]
+        
+        # Check if response ends mid-sentence
+        stripped = response.strip()
+        if stripped and not stripped[-1] in '.!?':
+            return True
+        
+        return any(incomplete_indicators)
+    
+    def _attempt_completion(self, incomplete_response: str, original_question: str) -> str:
+        """Attempt to complete an incomplete response"""
+        try:
+            completion_prompt = f"""
+The following response was incomplete:
+"{incomplete_response}"
+
+Original question: "{original_question}"
+
+Please complete this response naturally and concisely. Only provide the completion part, not the entire response again:
+"""
+            
+            completion_response = self.llm.invoke(completion_prompt)
+            if hasattr(completion_response, 'content'):
+                completion = completion_response.content.strip()
+                # Avoid repeating the incomplete response
+                if not completion.startswith(incomplete_response[:50]):
+                    return completion
+            return ""
+        except Exception as e:
+            logger.error(f"Error in completion attempt: {e}")
+            return ""
+
     def clear_memory(self):
         """Clear conversation history"""
         self.conversation_history = []

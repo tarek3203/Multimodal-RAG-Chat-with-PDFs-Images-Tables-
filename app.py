@@ -213,25 +213,39 @@ def main():
             with st.chat_message("user"):
                 st.markdown(prompt)
             
-            # Get AI response with streaming
+            # Get AI response with streaming and completion handling
             with st.chat_message("assistant"):
                 response_placeholder = st.empty()
                 full_response = ""
                 
-                # Stream the response with natural typing speed
-                for chunk in get_ai_response_stream(prompt, has_documents):
-                    full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
+                try:
+                    # Stream the response with fast typing speed (100 WPM)
+                    for chunk in get_ai_response_stream(prompt, has_documents):
+                        full_response += chunk
+                        response_placeholder.markdown(full_response + "▌")
+                        
+                        # Add natural typing delay for 100 WPM (very fast pace)
+                        # 100 WPM = 100 words / 60 seconds = 1.67 words per second
+                        # So 1 word takes 0.6 seconds (60/100)
+                        words_in_chunk = len(chunk.split())
+                        delay = min(words_in_chunk * 0.06, 0.25)  # Max 0.25s delay, very fast pace
+                        if delay > 0:
+                            time.sleep(delay)
                     
-                    # Add natural typing delay based on chunk size
-                    # Simulate ~50 WPM typing speed (average human typing)
-                    words_in_chunk = len(chunk.split())
-                    delay = min(words_in_chunk * 0.12, 0.5)  # Max 0.5s delay
-                    if delay > 0:
-                        time.sleep(delay)
-                
-                # Final response without cursor
-                response_placeholder.markdown(full_response)
+                    # Final response without cursor
+                    response_placeholder.markdown(full_response)
+                    
+                except Exception as stream_error:
+                    st.error(f"Streaming error: {stream_error}")
+                    # Fallback to non-streaming
+                    try:
+                        fallback_response = get_ai_response(prompt, has_documents)
+                        response_placeholder.markdown(fallback_response)
+                        full_response = fallback_response
+                    except Exception as fallback_error:
+                        error_msg = "Sorry, I encountered an error. Please try again."
+                        response_placeholder.markdown(error_msg)
+                        full_response = error_msg
             
             # Add assistant response
             st.session_state.messages.append({"role": "assistant", "content": full_response})
