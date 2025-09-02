@@ -183,10 +183,12 @@ def main():
         
         with col2:
             if st.button("📄 Clear Docs", use_container_width=True):
-                st.session_state.rag_system.clear_documents()
-                st.session_state.processed_files = []
-                st.session_state.docs_cleared = True  # Set flag to prevent auto-processing
-                st.success("Documents cleared!")
+                with st.spinner("🗑️ Clearing all documents and vector database..."):
+                    st.session_state.rag_system.clear_documents()
+                    st.session_state.processed_files = []
+                    st.session_state.docs_cleared = True  # Set flag to prevent auto-processing
+                    st.session_state.messages = []  # Also clear chat when docs are cleared
+                st.success("✅ All documents, vector database, and chat history cleared!")
                 st.rerun()
     
     # Main chat interface

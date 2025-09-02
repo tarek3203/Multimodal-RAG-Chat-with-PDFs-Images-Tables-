@@ -52,8 +52,8 @@ brew install poppler tesseract libmagic pkg-config
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Multimodal-RAG-Chat-with-PDFs-Images-Tables-.git
-cd Multimodal-RAG-Chat-with-PDFs-Images-Tables-
+git clone https://github.com/tarek3203/Multimodal-RAG-Chatbot.git
+cd Multimodal-RAG-Chatbot
 
 # Create virtual environment named 'tariq'
 python -m venv tariq
@@ -121,7 +121,7 @@ streamlit run app.py
 ## 🏗️ Project Structure
 
 ```
-Multimodal-RAG-Chat-with-PDFs-Images-Tables-/
+Multimodal-RAG-Chatbot/
 ├── app.py                      # Main Streamlit application
 ├── config.py                   # Configuration settings
 ├── prompts.py                  # AI prompt templates

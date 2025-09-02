@@ -10,6 +10,8 @@ import logging
 import uuid
 import base64
 import time
+import shutil
+import glob
 from langchain.schema.document import Document
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
@@ -622,15 +624,69 @@ Please complete this response naturally and concisely. Only provide the completi
         logger.info("Conversation history cleared")
     
     def clear_documents(self):
-        """Clear all documents from vector store and doc store"""
+        """Clear all documents from vector store, doc store, and delete persistent files"""
         try:
-            # Reinitialize the FAISS manager to clear everything
+            logger.info("Starting complete document cleanup...")
+            
+            # 1. Clear in-memory stores
+            self.doc_store = {}
+            self.conversation_history = []  # Also clear chat history when docs are cleared
+            
+            # 2. Delete vector storage files from disk
+            vector_storage_path = Config.VECTOR_FOLDER
+            if vector_storage_path.exists():
+                logger.info(f"Deleting vector storage directory: {vector_storage_path}")
+                shutil.rmtree(vector_storage_path, ignore_errors=True)
+                # Recreate the directory structure
+                vector_storage_path.mkdir(parents=True, exist_ok=True)
+                (vector_storage_path / "pdf_documents").mkdir(exist_ok=True)
+            
+            # 3. Delete processed PDF cache files
+            processed_pdf_path = Config.PROJECT_ROOT / "data" / "processed_pdf"
+            if processed_pdf_path.exists():
+                logger.info(f"Deleting processed PDF cache: {processed_pdf_path}")
+                # Delete contents but keep directory structure
+                for item in processed_pdf_path.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                # Recreate subdirectories
+                (processed_pdf_path / "Images").mkdir(exist_ok=True)
+                (processed_pdf_path / "Tables").mkdir(exist_ok=True)
+            
+            # 4. Delete any FAISS index files that might exist
+            faiss_patterns = [
+                "*.faiss",
+                "*.pkl", 
+                "*index*",
+                "*docstore*"
+            ]
+            
+            for pattern in faiss_patterns:
+                for file_path in glob.glob(str(Config.PROJECT_ROOT / pattern)):
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"Deleted FAISS file: {file_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete {file_path}: {e}")
+            
+            # 5. Reinitialize the FAISS manager with clean state
             self.faiss_manager = FAISSManager(embedding_model=Config.EMBEDDING_MODEL)
             self.retriever = self.faiss_manager.retriever
-            self.doc_store = {}
-            logger.info("All documents cleared from RAG system")
+            
+            logger.info("✅ Complete document cleanup successful - all files and databases cleared")
+            
         except Exception as e:
-            logger.error(f"Error clearing documents: {e}")
+            logger.error(f"Error during complete document cleanup: {e}")
+            # Fallback: at least clear in-memory data
+            try:
+                self.faiss_manager = FAISSManager(embedding_model=Config.EMBEDDING_MODEL)
+                self.retriever = self.faiss_manager.retriever
+                self.doc_store = {}
+                logger.info("Fallback cleanup completed")
+            except Exception as fallback_error:
+                logger.error(f"Fallback cleanup also failed: {fallback_error}")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get system statistics"""
