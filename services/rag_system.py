@@ -14,8 +14,6 @@ import shutil
 import glob
 from langchain.schema.document import Document
 from langchain_community.vectorstores import FAISS
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -240,12 +238,45 @@ class MultimodalRAGSystem:
             # Retrieve relevant documents using the retriever
             docs = self.retriever.invoke(question)
             
+            # 🔍 DEBUG: Print raw retrieved docs to understand the issue
+            print("=" * 80)
+            print("📋 RAW RETRIEVED DOCUMENTS DEBUG")
+            print("=" * 80)
+            print(f"📊 Number of documents retrieved: {len(docs)}")
+            for i, doc in enumerate(docs):
+                doc_str = str(doc)
+                print(f"\n📄 Document {i+1}:")
+                print(f"  Type: {type(doc)}")
+                print(f"  Length: {len(doc_str)}")
+                print(f"  First 100 chars: {doc_str[:100]}...")
+                
+                # Check if it's base64
+                try:
+                    base64.b64decode(doc_str[:100], validate=True)
+                    print(f"  🖼️  Detected as: BASE64 IMAGE")
+                except:
+                    print(f"  � Detected as: TEXT CONTENT")
+            print("=" * 80)
+            
             if not docs:
                 yield "I couldn't find relevant information for your question."
                 return
             
             # Parse documents to separate images from text
             parsed_docs = self._parse_retrieved_docs(docs)
+            
+            print(f"📊 PARSED RESULTS:")
+            print(f"  📝 Text documents: {len(parsed_docs['texts'])}")
+            print(f"  �️  Image documents: {len(parsed_docs['images'])}")
+            
+            # Show text content
+            if parsed_docs['texts']:
+                print(f"\n📝 TEXT CONTENT:")
+                for i, text in enumerate(parsed_docs['texts']):
+                    print(f"  Text {i+1}: {text[:200]}...")
+            
+            print("=" * 80)
+            print()
             
             # Format conversation history
             history = ""
