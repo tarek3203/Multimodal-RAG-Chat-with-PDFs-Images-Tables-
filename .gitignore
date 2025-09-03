@@ -63,7 +63,7 @@ vector_storage/
 logs/
 
 # Data files
-data/
+# data/
 datasets/
 *.csv
 *.json
