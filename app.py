@@ -226,9 +226,7 @@ def main():
                         full_response += chunk
                         response_placeholder.markdown(full_response + "▌")
                         
-                        # Add natural typing delay for 100 WPM (very fast pace)
-                        # 100 WPM = 100 words / 60 seconds = 1.67 words per second
-                        # So 1 word takes 0.6 seconds (60/100)
+                        
                         words_in_chunk = len(chunk.split())
                         delay = min(words_in_chunk * 0.06, 0.25)  # Max 0.25s delay, very fast pace
                         if delay > 0:
